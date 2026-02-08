@@ -22,14 +22,25 @@ CoordMode("ToolTip", "Screen")
 ; Global State
 ;==============================================================================
 global AppState := {
-    targetX: 0,
-    targetY: 0,
-    interval1: 1000,  ; milliseconds
-    interval2: 2000,  ; milliseconds
+    clickSteps: [],           ; Array of ClickStep objects
+    currentStepIndex: 1,      ; Which step is currently executing (1-based)
+    currentIntervalIndex: 1,  ; Which interval in current step (1-based)
     isRunning: false,
     isCapturing: false,
-    currentTimer: 1,
-    modifierKey: "None"  ; Shift, Ctrl, Alt, or None
+    activeTabIndex: 1         ; Which tab is currently visible (1-based)
+}
+
+;==============================================================================
+; Initialize with one default ClickStep
+;==============================================================================
+InitializeDefaultStep() {
+    AppState.clickSteps := []
+    AppState.clickSteps.Push({
+        targetX: 0,
+        targetY: 0,
+        modifierKey: "None",
+        intervals: [1000, 2000]  ; Default two intervals
+    })
 }
 
 ;==============================================================================
@@ -38,6 +49,9 @@ global AppState := {
 Main()
 
 Main() {
+    ; Initialize default click step
+    InitializeDefaultStep()
+    
     ; Load saved settings
     LoadSettings()
     
@@ -86,12 +100,45 @@ ShowWelcome() {
 LoadSettings() {
     configFile := A_ScriptDir . "\..\config\settings.ini"
     
-    if FileExist(configFile) {
-        AppState.targetX := IniRead(configFile, "Coordinate", "X", 0)
-        AppState.targetY := IniRead(configFile, "Coordinate", "Y", 0)
-        AppState.interval1 := IniRead(configFile, "Intervals", "Interval1", 1000)
-        AppState.interval2 := IniRead(configFile, "Intervals", "Interval2", 2000)
-        AppState.modifierKey := IniRead(configFile, "Click", "ModifierKey", "None")
+    if !FileExist(configFile) {
+        return
+    }
+    
+    ; Read number of steps
+    stepCount := IniRead(configFile, "General", "StepCount", 1)
+    
+    ; Clear and reload steps
+    AppState.clickSteps := []
+    
+    Loop stepCount {
+        stepNum := A_Index
+        sectionName := "ClickStep" . stepNum
+        
+        ; Read step data
+        x := IniRead(configFile, sectionName, "X", 0)
+        y := IniRead(configFile, sectionName, "Y", 0)
+        modifier := IniRead(configFile, sectionName, "ModifierKey", "None")
+        intervalsStr := IniRead(configFile, sectionName, "Intervals", "1000,2000")
+        
+        ; Parse intervals (comma-separated)
+        intervals := []
+        Loop Parse, intervalsStr, ","
+        {
+            if (A_LoopField != "" && Number(A_LoopField) > 0)
+                intervals.Push(Number(A_LoopField))
+        }
+        
+        ; Ensure at least one interval
+        if (intervals.Length = 0)
+            intervals.Push(1000)
+        
+        ; Add step to state
+        AppState.clickSteps.Push({
+            targetX: Number(x),
+            targetY: Number(y),
+            modifierKey: modifier,
+            intervals: intervals
+        })
     }
 }
 
@@ -103,9 +150,28 @@ SaveSettings() {
     if !DirExist(configDir)
         DirCreate(configDir)
     
-    IniWrite(AppState.targetX, configFile, "Coordinate", "X")
-    IniWrite(AppState.targetY, configFile, "Coordinate", "Y")
-    IniWrite(AppState.interval1, configFile, "Intervals", "Interval1")
-    IniWrite(AppState.interval2, configFile, "Intervals", "Interval2")
-    IniWrite(AppState.modifierKey, configFile, "Click", "ModifierKey")
+    ; Delete old file and start fresh
+    if FileExist(configFile)
+        FileDelete(configFile)
+    
+    ; Write step count
+    IniWrite(AppState.clickSteps.Length, configFile, "General", "StepCount")
+    
+    ; Write each step
+    for index, step in AppState.clickSteps {
+        sectionName := "ClickStep" . index
+        
+        IniWrite(step.targetX, configFile, sectionName, "X")
+        IniWrite(step.targetY, configFile, sectionName, "Y")
+        IniWrite(step.modifierKey, configFile, sectionName, "ModifierKey")
+        
+        ; Convert intervals array to comma-separated string
+        intervalsStr := ""
+        for idx, interval in step.intervals {
+            intervalsStr .= interval
+            if (idx < step.intervals.Length)
+                intervalsStr .= ","
+        }
+        IniWrite(intervalsStr, configFile, sectionName, "Intervals")
+    }
 }

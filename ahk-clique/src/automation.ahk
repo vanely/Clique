@@ -1,102 +1,68 @@
 ;==============================================================================
-; Automation Logic Module
-; Handles coordinate capture and automated clicking
+; Automation Logic Module (Rebuilt for Multi-Step Sequential Execution)
+; Handles coordinate capture and automated clicking through multiple steps
 ;==============================================================================
 
 ;==============================================================================
-; Start Coordinate Capture Mode
+; Start Coordinate Capture Mode (called by hotkey F3)
 ;==============================================================================
 StartCoordinateCapture() {
-    if (AppState.isRunning) {
-        MsgBox("Cannot capture while automation is running", "Error", 48)
+    ; Capture for the currently active tab/step
+    activeStep := AppState.activeTabIndex
+    
+    if (activeStep > AppState.clickSteps.Length) {
+        MsgBox("Please select a step tab first", "No Step Selected", 48)
         return
     }
     
-    AppState.isCapturing := true
-    UpdateStatus("Move mouse to target position and press LEFT CLICK")
-    
-    ; Show visual feedback
-    ToolTip("Click anywhere to capture that coordinate", 10, 10)
-    
-    ; Wait for mouse click
-    KeyWait("LButton", "D")
-    
-    ; Capture the position
-    MouseGetPos(&x, &y)
-    
-    ; Update state and GUI
-    AppState.targetX := x
-    AppState.targetY := y
-    xCoordEdit.Value := x
-    yCoordEdit.Value := y
-    
-    AppState.isCapturing := false
-    ToolTip()
-    
-    UpdateStatus("Coordinate captured: (" . x . ", " . y . ")", 3000)
-    
-    ; Flash the captured location
-    FlashLocation(x, y)
+    CaptureCoordinateForStep(activeStep)
 }
 
 ;==============================================================================
-; Flash Location Indicator
-;==============================================================================
-FlashLocation(x, y) {
-    ; Create a temporary visual indicator
-    indicator := Gui("+AlwaysOnTop -Caption +ToolWindow")
-    indicator.BackColor := "Lime"
-    WinSetTransparent(200, indicator)
-    
-    ; Show at target location
-    indicator.Show("x" . (x - 10) . " y" . (y - 10) . " w20 h20 NoActivate")
-    
-    ; Flash 3 times
-    Loop 3 {
-        Sleep(200)
-        indicator.Hide()
-        Sleep(200)
-        indicator.Show("NoActivate")
-    }
-    
-    Sleep(500)
-    indicator.Destroy()
-}
-
-;==============================================================================
-; Start Automation
+; Start Automation (Sequential Execution)
 ;==============================================================================
 StartAutomation() {
-    global interval1Edit, interval2Edit, modifierDropDown
-    
     if (AppState.isRunning) {
         return
     }
     
-    ; Validate coordinates
-    if (AppState.targetX = 0 && AppState.targetY = 0) {
-        MsgBox("Please set target coordinates first", "No Coordinates", 48)
-        return
+    ; Update all steps from GUI controls BEFORE validating/starting
+    for stepIndex, controls in StepTabs {
+        step := AppState.clickSteps[stepIndex]
+        step.targetX := Number(controls["xCoord"].Value)
+        step.targetY := Number(controls["yCoord"].Value)
+        step.modifierKey := controls["modifier"].Text
+        
+        ; Update intervals
+        step.intervals := []
+        for intervalEdit in controls["intervals"] {
+            step.intervals.Push(Number(intervalEdit.Value))
+        }
     }
     
-    ; Get current values from GUI
-    AppState.interval1 := Number(interval1Edit.Value)
-    AppState.interval2 := Number(interval2Edit.Value)
-    AppState.modifierKey := modifierDropDown.Text
-    
-    ; Validate intervals
-    if (AppState.interval1 < 100 || AppState.interval2 < 100) {
-        MsgBox("Intervals must be at least 100ms", "Invalid Intervals", 48)
-        return
+    ; Validate all steps have coordinates
+    for index, step in AppState.clickSteps {
+        if (step.targetX = 0 && step.targetY = 0) {
+            MsgBox("Step " . index . " has no coordinates set!`nPlease configure all steps.", "Invalid Configuration", 48)
+            return
+        }
+        
+        ; Validate all intervals
+        for interval in step.intervals {
+            if (interval < 100) {
+                MsgBox("Step " . index . " has intervals less than 100ms!`nPlease fix before starting.", "Invalid Intervals", 48)
+                return
+            }
+        }
     }
     
-    ; Update state
+    ; Initialize execution state
     AppState.isRunning := true
-    AppState.currentTimer := 1
-    UpdateGUIState(true)
+    AppState.currentStepIndex := 1
+    AppState.currentIntervalIndex := 1
     
-    modifierText := AppState.modifierKey != "None" ? " with " . AppState.modifierKey : ""
-    UpdateStatus("RUNNING - Clicking" . modifierText . " with alternating intervals")
+    UpdateGUIState(true)
+    UpdateStatus("RUNNING - Step 1 of " . AppState.clickSteps.Length)
     
     ; Start the automation sequence
     PerformClick()
@@ -115,7 +81,9 @@ StopAutomation() {
     
     ; Update state
     AppState.isRunning := false
-    AppState.currentTimer := 1
+    AppState.currentStepIndex := 1
+    AppState.currentIntervalIndex := 1
+    
     UpdateGUIState(false)
     UpdateStatus("Stopped")
 }
@@ -132,34 +100,49 @@ EmergencyStop() {
 }
 
 ;==============================================================================
-; Perform Click Action
+; Perform Click Action (Sequential Step & Interval Execution)
 ;==============================================================================
 PerformClick() {
-    global ClickTimer
-    
     if (!AppState.isRunning) {
         return
     }
     
+    ; Get current step
+    currentStep := AppState.clickSteps[AppState.currentStepIndex]
+    
     ; Perform the click with modifier key
-    PerformModifierClick(AppState.targetX, AppState.targetY, AppState.modifierKey)
+    PerformModifierClick(currentStep.targetX, currentStep.targetY, currentStep.modifierKey)
     
     ; Show brief visual feedback
-    ShowClickFeedback(AppState.targetX, AppState.targetY)
+    ShowClickFeedback(currentStep.targetX, currentStep.targetY)
     
-    ; Determine next interval
-    if (AppState.currentTimer = 1) {
-        nextInterval := AppState.interval1
-        AppState.currentTimer := 2
-        UpdateStatus("RUNNING - Next click in " . nextInterval . "ms (Interval 1)")
-    } else {
-        nextInterval := AppState.interval2
-        AppState.currentTimer := 1
-        UpdateStatus("RUNNING - Next click in " . nextInterval . "ms (Interval 2)")
+    ; Get current interval
+    currentInterval := currentStep.intervals[AppState.currentIntervalIndex]
+    
+    ; Update status
+    statusMsg := "RUNNING - Step " . AppState.currentStepIndex . "/" . AppState.clickSteps.Length
+    statusMsg .= " | Interval " . AppState.currentIntervalIndex . "/" . currentStep.intervals.Length
+    statusMsg .= " | Next: " . currentInterval . "ms"
+    UpdateStatus(statusMsg)
+    
+    ; Advance to next interval
+    AppState.currentIntervalIndex++
+    
+    ; Check if we've completed all intervals in this step
+    if (AppState.currentIntervalIndex > currentStep.intervals.Length) {
+        ; Move to next step
+        AppState.currentIntervalIndex := 1
+        AppState.currentStepIndex++
+        
+        ; Check if we've completed all steps
+        if (AppState.currentStepIndex > AppState.clickSteps.Length) {
+            ; Loop back to first step
+            AppState.currentStepIndex := 1
+        }
     }
     
     ; Schedule next click
-    SetTimer(PerformClick, -nextInterval)
+    SetTimer(PerformClick, -currentInterval)
 }
 
 ;==============================================================================
@@ -179,19 +162,25 @@ ShowClickFeedback(x, y) {
 ; Perform Click with Modifier Key
 ;==============================================================================
 PerformModifierClick(x, y, modifier) {
-    ; Press modifier key if specified
+    ; Keep modifier pressed DURING the entire click operation
     switch modifier {
         case "Shift":
             Send("{Shift down}")
-            Click(x, y)
+            ; Sleep(50)         ; Pre-click delay
+            Click(x, y)       ; Click while Shift is still down
+            ; Sleep(150)        ; Keep Shift held after click
             Send("{Shift up}")
         case "Ctrl":
             Send("{Ctrl down}")
-            Click(x, y)
+            ; Sleep(50)
+            Click(x, y)       ; Click while Ctrl is still down
+            ; Sleep(150)
             Send("{Ctrl up}")
         case "Alt":
             Send("{Alt down}")
-            Click(x, y)
+            ; Sleep(50)
+            Click(x, y)       ; Click while Alt is still down
+            ; Sleep(150)
             Send("{Alt up}")
         default:  ; "None"
             Click(x, y)
