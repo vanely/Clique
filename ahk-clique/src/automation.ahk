@@ -166,9 +166,9 @@ PerformModifierClick(x, y, modifier) {
     switch modifier {
         case "Shift":
             Send("{Shift down}")
-            ; Sleep(50)         ; Pre-click delay
+            ; Sleep(800)         ; Pre-click delay
             Click(x, y)       ; Click while Shift is still down
-            ; Sleep(150)        ; Keep Shift held after click
+            ; Sleep(100)        ; Keep Shift held after click
             Send("{Shift up}")
         case "Ctrl":
             Send("{Ctrl down}")
