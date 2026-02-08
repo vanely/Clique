@@ -28,7 +28,8 @@ global AppState := {
     interval2: 2000,  ; milliseconds
     isRunning: false,
     isCapturing: false,
-    currentTimer: 1
+    currentTimer: 1,
+    modifierKey: "None"  ; Shift, Ctrl, Alt, or None
 }
 
 ;==============================================================================
@@ -90,6 +91,7 @@ LoadSettings() {
         AppState.targetY := IniRead(configFile, "Coordinate", "Y", 0)
         AppState.interval1 := IniRead(configFile, "Intervals", "Interval1", 1000)
         AppState.interval2 := IniRead(configFile, "Intervals", "Interval2", 2000)
+        AppState.modifierKey := IniRead(configFile, "Click", "ModifierKey", "None")
     }
 }
 
@@ -105,4 +107,5 @@ SaveSettings() {
     IniWrite(AppState.targetY, configFile, "Coordinate", "Y")
     IniWrite(AppState.interval1, configFile, "Intervals", "Interval1")
     IniWrite(AppState.interval2, configFile, "Intervals", "Interval2")
+    IniWrite(AppState.modifierKey, configFile, "Click", "ModifierKey")
 }

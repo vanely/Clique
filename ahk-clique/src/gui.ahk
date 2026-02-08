@@ -9,7 +9,7 @@ global MainGui := ""
 ; Create Main GUI Window
 ;==============================================================================
 CreateMainGUI() {
-    global MainGui := Gui("+AlwaysOnTop", "Desktop Automation Tool")
+    global MainGui := Gui("+AlwaysOnTop", "Hey! What are you doing?! 👀")
     MainGui.SetFont("s10", "Segoe UI")
     
     ; Coordinate Section
@@ -26,42 +26,48 @@ CreateMainGUI() {
     testBtn.OnEvent("Click", (*) => TestClick())
     
     ; Intervals Section
-    MainGui.Add("GroupBox", "x10 y120 w380 h120", "Click Intervals (milliseconds)")
-    MainGui.Add("Text", "x20 y145", "Interval 1:")
-    global interval1Edit := MainGui.Add("Edit", "x120 y142 w100 Number", AppState.interval1)
-    MainGui.Add("Text", "x230 y145", "ms")
+    MainGui.Add("GroupBox", "x10 y120 w380 h150", "Click Settings")
     
-    MainGui.Add("Text", "x20 y175", "Interval 2:")
-    global interval2Edit := MainGui.Add("Edit", "x120 y172 w100 Number", AppState.interval2)
+    MainGui.Add("Text", "x20 y145", "Modifier Key:")
+    global modifierDropDown := MainGui.Add("DropDownList", "x120 y142 w100", ["None", "Shift", "Ctrl", "Alt"])
+    modifierDropDown.Text := AppState.modifierKey
+    MainGui.Add("Text", "x230 y145 c888888", "(pressed with click)")
+    
+    MainGui.Add("Text", "x20 y175", "Interval 1:")
+    global interval1Edit := MainGui.Add("Edit", "x120 y172 w100 Number", AppState.interval1)
     MainGui.Add("Text", "x230 y175", "ms")
     
-    MainGui.Add("Text", "x20 y205 c888888", "Pattern: Click → Wait Interval1 → Click → Wait Interval2 → Repeat")
+    MainGui.Add("Text", "x20 y205", "Interval 2:")
+    global interval2Edit := MainGui.Add("Edit", "x120 y202 w100 Number", AppState.interval2)
+    MainGui.Add("Text", "x230 y205", "ms")
+    
+    MainGui.Add("Text", "x20 y235 c888888", "Pattern: Click → Wait Interval1 → Click → Wait Interval2 → Repeat")
     
     ; Control Buttons Section
-    MainGui.Add("GroupBox", "x10 y250 w380 h100", "Controls")
+    MainGui.Add("GroupBox", "x10 y280 w380 h100", "Controls")
     
-    global startBtn := MainGui.Add("Button", "x20 y275 w110 h40", "Start (F1)")
+    global startBtn := MainGui.Add("Button", "x20 y305 w110 h40", "Start (F1)")
     startBtn.OnEvent("Click", (*) => StartAutomation())
     
-    global stopBtn := MainGui.Add("Button", "x140 y275 w110 h40 Disabled", "Stop (F2)")
+    global stopBtn := MainGui.Add("Button", "x140 y305 w110 h40 Disabled", "Stop (F2)")
     stopBtn.OnEvent("Click", (*) => StopAutomation())
     
-    global emergencyBtn := MainGui.Add("Button", "x260 y275 w120 h40 cRed", "EMERGENCY (ESC)")
+    global emergencyBtn := MainGui.Add("Button", "x260 y305 w120 h40 cRed", "EMERGENCY (ESC)")
     emergencyBtn.OnEvent("Click", (*) => EmergencyStop())
     
     ; Status Section
-    MainGui.Add("GroupBox", "x10 y360 w380 h80", "Status")
-    global statusText := MainGui.Add("Text", "x20 y385 w360 h50", "Ready - Press F3 to capture a coordinate")
+    MainGui.Add("GroupBox", "x10 y390 w380 h80", "Status")
+    global statusText := MainGui.Add("Text", "x20 y415 w360 h50", "Ready - Press F3 to capture a coordinate")
     
     ; Save button
-    global saveBtn := MainGui.Add("Button", "x10 y450 w380 h35", "Save Settings")
+    global saveBtn := MainGui.Add("Button", "x10 y480 w380 h35", "Save Settings")
     saveBtn.OnEvent("Click", (*) => SaveCurrentSettings())
     
     ; Handle window close
     MainGui.OnEvent("Close", (*) => ExitApp())
     
     ; Show the GUI
-    MainGui.Show("w400 h500")
+    MainGui.Show("w400 h530")
 }
 
 ;==============================================================================
@@ -81,7 +87,7 @@ UpdateStatus(message, duration := 0) {
 ;==============================================================================
 UpdateGUIState(running := false) {
     global startBtn, stopBtn, captureBtn, testBtn
-    global xCoordEdit, yCoordEdit, interval1Edit, interval2Edit
+    global xCoordEdit, yCoordEdit, interval1Edit, interval2Edit, modifierDropDown
     
     if (running) {
         startBtn.Enabled := false
@@ -92,6 +98,7 @@ UpdateGUIState(running := false) {
         yCoordEdit.Enabled := false
         interval1Edit.Enabled := false
         interval2Edit.Enabled := false
+        modifierDropDown.Enabled := false
     } else {
         startBtn.Enabled := true
         stopBtn.Enabled := false
@@ -101,6 +108,7 @@ UpdateGUIState(running := false) {
         yCoordEdit.Enabled := true
         interval1Edit.Enabled := true
         interval2Edit.Enabled := true
+        modifierDropDown.Enabled := true
     }
 }
 
@@ -108,13 +116,14 @@ UpdateGUIState(running := false) {
 ; Save Current Settings from GUI
 ;==============================================================================
 SaveCurrentSettings() {
-    global xCoordEdit, yCoordEdit, interval1Edit, interval2Edit
+    global xCoordEdit, yCoordEdit, interval1Edit, interval2Edit, modifierDropDown
     
     ; Update state from GUI
     AppState.targetX := Number(xCoordEdit.Value)
     AppState.targetY := Number(yCoordEdit.Value)
     AppState.interval1 := Number(interval1Edit.Value)
     AppState.interval2 := Number(interval2Edit.Value)
+    AppState.modifierKey := modifierDropDown.Text
     
     ; Validate intervals
     if (AppState.interval1 < 100) {
@@ -135,23 +144,25 @@ SaveCurrentSettings() {
 ; Test Click Function
 ;==============================================================================
 TestClick() {
-    global xCoordEdit, yCoordEdit
+    global xCoordEdit, yCoordEdit, modifierDropDown
     
     x := Number(xCoordEdit.Value)
     y := Number(yCoordEdit.Value)
+    modifier := modifierDropDown.Text
     
     if (x = 0 && y = 0) {
         MsgBox("Please set coordinates first", "Invalid Coordinates", 48)
         return
     }
     
-    UpdateStatus("Test clicking at (" . x . ", " . y . ")...", 3000)
+    modifierText := modifier != "None" ? " with " . modifier : ""
+    UpdateStatus("Test clicking at (" . x . ", " . y . ")" . modifierText . "...", 3000)
     
     ; Save current position
     MouseGetPos(&currentX, &currentY)
     
-    ; Perform test click
-    Click(x, y)
+    ; Perform test click with modifier
+    PerformModifierClick(x, y, modifier)
     
     ; Return to original position
     MouseMove(currentX, currentY)

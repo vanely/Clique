@@ -67,6 +67,8 @@ FlashLocation(x, y) {
 ; Start Automation
 ;==============================================================================
 StartAutomation() {
+    global interval1Edit, interval2Edit, modifierDropDown
+    
     if (AppState.isRunning) {
         return
     }
@@ -80,6 +82,7 @@ StartAutomation() {
     ; Get current values from GUI
     AppState.interval1 := Number(interval1Edit.Value)
     AppState.interval2 := Number(interval2Edit.Value)
+    AppState.modifierKey := modifierDropDown.Text
     
     ; Validate intervals
     if (AppState.interval1 < 100 || AppState.interval2 < 100) {
@@ -91,7 +94,9 @@ StartAutomation() {
     AppState.isRunning := true
     AppState.currentTimer := 1
     UpdateGUIState(true)
-    UpdateStatus("RUNNING - Clicking with alternating intervals")
+    
+    modifierText := AppState.modifierKey != "None" ? " with " . AppState.modifierKey : ""
+    UpdateStatus("RUNNING - Clicking" . modifierText . " with alternating intervals")
     
     ; Start the automation sequence
     PerformClick()
@@ -136,8 +141,8 @@ PerformClick() {
         return
     }
     
-    ; Perform the click
-    Click(AppState.targetX, AppState.targetY)
+    ; Perform the click with modifier key
+    PerformModifierClick(AppState.targetX, AppState.targetY, AppState.modifierKey)
     
     ; Show brief visual feedback
     ShowClickFeedback(AppState.targetX, AppState.targetY)
@@ -168,4 +173,27 @@ ShowClickFeedback(x, y) {
     pulse.Show("x" . (x - 5) . " y" . (y - 5) . " w10 h10 NoActivate")
     
     SetTimer(() => pulse.Destroy(), -100)
+}
+
+;==============================================================================
+; Perform Click with Modifier Key
+;==============================================================================
+PerformModifierClick(x, y, modifier) {
+    ; Press modifier key if specified
+    switch modifier {
+        case "Shift":
+            Send("{Shift down}")
+            Click(x, y)
+            Send("{Shift up}")
+        case "Ctrl":
+            Send("{Ctrl down}")
+            Click(x, y)
+            Send("{Ctrl up}")
+        case "Alt":
+            Send("{Alt down}")
+            Click(x, y)
+            Send("{Alt up}")
+        default:  ; "None"
+            Click(x, y)
+    }
 }

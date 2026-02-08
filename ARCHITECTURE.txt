@@ -1,0 +1,558 @@
+════════════════════════════════════════════════════════════════════════════════
+  DESKTOP AUTOMATION TOOL - ARCHITECTURE DIAGRAM
+════════════════════════════════════════════════════════════════════════════════
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                           ENTRY POINT & BOOTSTRAP                            │
+│                                                                              │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │                           main.ahk                                      │ │
+│  │  ┌──────────────────────────────────────────────────────────────────┐  │ │
+│  │  │  #Requires AutoHotkey v2.0                                       │  │ │
+│  │  │  #Include gui.ahk, automation.ahk, utils.ahk                     │  │ │
+│  │  └──────────────────────────────────────────────────────────────────┘  │ │
+│  │                                                                          │ │
+│  │  ┌──────────────────────────────────────────────────────────────────┐  │ │
+│  │  │  Global AppState                                                 │  │ │
+│  │  │  {                                                               │  │ │
+│  │  │    targetX: 0,    targetY: 0,                                   │  │ │
+│  │  │    interval1: 1000,  interval2: 2000,                           │  │ │
+│  │  │    isRunning: false, isCapturing: false,                        │  │ │
+│  │  │    currentTimer: 1                                              │  │ │
+│  │  │  }                                                               │  │ │
+│  │  └──────────────────────────────────────────────────────────────────┘  │ │
+│  │                                                                          │ │
+│  │  Main() ──┬──> LoadSettings()       [Read config/settings.ini]         │ │
+│  │           ├──> CreateMainGUI()      [Initialize GUI]                   │ │
+│  │           ├──> RegisterHotkeys()    [F1, F2, F3, ESC]                  │ │
+│  │           └──> ShowWelcome()        [Display tooltip]                  │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────┘
+                                        │
+                    ┌───────────────────┼───────────────────┐
+                    ▼                   ▼                   ▼
+        ┌───────────────────┐ ┌────────────────┐ ┌──────────────────┐
+        │    gui.ahk        │ │ automation.ahk │ │   utils.ahk      │
+        │   (UI Layer)      │ │ (Logic Layer)  │ │ (Helper Layer)   │
+        └───────────────────┘ └────────────────┘ └──────────────────┘
+
+
+════════════════════════════════════════════════════════════════════════════════
+  MODULE: gui.ahk (USER INTERFACE)
+════════════════════════════════════════════════════════════════════════════════
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                          GUI COMPONENT STRUCTURE                             │
+│                                                                              │
+│  CreateMainGUI()                                                             │
+│    │                                                                          │
+│    ├─> [Coordinate Section]                                                  │
+│    │     ├─ X/Y Input Fields  ───> AppState.targetX/Y                        │
+│    │     ├─ Capture Button (F3) ──> StartCoordinateCapture()                 │
+│    │     └─ Test Click Button ────> TestClick()                              │
+│    │                                                                          │
+│    ├─> [Intervals Section]                                                   │
+│    │     ├─ Interval1 Input ──────> AppState.interval1                       │
+│    │     └─ Interval2 Input ──────> AppState.interval2                       │
+│    │                                                                          │
+│    ├─> [Controls Section]                                                    │
+│    │     ├─ Start Button (F1) ────> StartAutomation()                        │
+│    │     ├─ Stop Button (F2) ─────> StopAutomation()                         │
+│    │     └─ Emergency Button (ESC)> EmergencyStop()                          │
+│    │                                                                          │
+│    ├─> [Status Section]                                                      │
+│    │     └─ Status Text ──────────> UpdateStatus(message)                    │
+│    │                                                                          │
+│    └─> [Save Button] ───────────> SaveCurrentSettings()                      │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                            GUI STATE MANAGEMENT                              │
+│                                                                              │
+│  UpdateGUIState(running)                                                     │
+│    │                                                                          │
+│    ├─ If running = true:                                                     │
+│    │    ├─ Disable: Start, Capture, Test, All Inputs                         │
+│    │    └─ Enable: Stop                                                      │
+│    │                                                                          │
+│    └─ If running = false:                                                    │
+│         ├─ Enable: Start, Capture, Test, All Inputs                          │
+│         └─ Disable: Stop                                                     │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                          GUI-TRIGGERED ACTIONS                               │
+│                                                                              │
+│  SaveCurrentSettings()                                                       │
+│    ├─> Read GUI fields (x, y, interval1, interval2)                          │
+│    ├─> Validate intervals (>= 100ms)                                         │
+│    ├─> Update AppState                                                       │
+│    ├─> Call SaveSettings() in main.ahk                                       │
+│    └─> Show success message                                                  │
+│                                                                              │
+│  TestClick()                                                                 │
+│    ├─> Read coordinates from GUI                                             │
+│    ├─> Validate not (0,0)                                                    │
+│    ├─> Save current mouse position                                           │
+│    ├─> Click(x, y)                                                           │
+│    └─> Restore mouse position                                                │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+
+════════════════════════════════════════════════════════════════════════════════
+  MODULE: automation.ahk (AUTOMATION LOGIC)
+════════════════════════════════════════════════════════════════════════════════
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                        COORDINATE CAPTURE FLOW                               │
+│                                                                              │
+│  [User presses F3 or clicks Capture button]                                 │
+│             │                                                                │
+│             ▼                                                                │
+│  StartCoordinateCapture()                                                    │
+│    │                                                                          │
+│    ├─> Check if automation running ───> [NO]  ─┐                             │
+│    │                                            │                             │
+│    │                                   [YES]    │                             │
+│    │                                     │      │                             │
+│    │                                     ▼      │                             │
+│    │                              Show error    │                             │
+│    │                                  return    │                             │
+│    │                                            │                             │
+│    │                              ◄─────────────┘                             │
+│    │                                                                          │
+│    ├─> Set AppState.isCapturing = true                                       │
+│    ├─> Show tooltip: "Click anywhere to capture"                             │
+│    ├─> KeyWait("LButton", "D")  ──> [WAIT FOR CLICK]                         │
+│    ├─> MouseGetPos(&x, &y)                                                   │
+│    ├─> Update AppState.targetX/Y                                             │
+│    ├─> Update GUI fields (xCoordEdit, yCoordEdit)                            │
+│    ├─> Set AppState.isCapturing = false                                      │
+│    ├─> FlashLocation(x, y)  ──> Green pulsing indicator                      │
+│    └─> UpdateStatus("Coordinate captured")                                   │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                       AUTOMATION EXECUTION FLOW                              │
+│                                                                              │
+│  [User presses F1 or clicks Start button]                                   │
+│             │                                                                │
+│             ▼                                                                │
+│  StartAutomation()                                                           │
+│    │                                                                          │
+│    ├─> Validate coordinates not (0,0) ───> [FAIL] ─> Show error, return     │
+│    ├─> Read intervals from GUI                                               │
+│    ├─> Validate intervals >= 100ms ──────> [FAIL] ─> Show error, return     │
+│    ├─> Set AppState.isRunning = true                                         │
+│    ├─> Reset AppState.currentTimer = 1                                       │
+│    ├─> UpdateGUIState(true)  ──> Disable controls                            │
+│    ├─> UpdateStatus("RUNNING...")                                            │
+│    └─> PerformClick() ──────────────────┐                                    │
+│                                         │                                    │
+│  ┌──────────────────────────────────────┘                                    │
+│  │                                                                            │
+│  ▼                                                                            │
+│  PerformClick()   ◄─────────────┐                                            │
+│    │                             │                                            │
+│    ├─> Check AppState.isRunning ┼──> [FALSE] ─> return                       │
+│    │                             │                                            │
+│    │                    [TRUE]   │                                            │
+│    │                             │                                            │
+│    ├─> Click(AppState.targetX, AppState.targetY)                             │
+│    ├─> ShowClickFeedback(x, y)  ──> Yellow pulse indicator                   │
+│    │                                                                          │
+│    ├─> Determine next interval:                                              │
+│    │     │                                                                    │
+│    │     ├─ If currentTimer = 1:                                              │
+│    │     │    ├─ nextInterval = interval1                                     │
+│    │     │    └─ currentTimer = 2                                             │
+│    │     │                                                                    │
+│    │     └─ If currentTimer = 2:                                              │
+│    │          ├─ nextInterval = interval2                                     │
+│    │          └─ currentTimer = 1                                             │
+│    │                                                                          │
+│    ├─> UpdateStatus("Next click in X ms")                                    │
+│    └─> SetTimer(PerformClick, -nextInterval) ──┘ [SCHEDULE NEXT CLICK]       │
+│                                                                              │
+│  Pattern: Click → Wait(interval1) → Click → Wait(interval2) → Repeat...     │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                          STOP & EMERGENCY FLOWS                              │
+│                                                                              │
+│  StopAutomation()  [F2 or Stop Button]                                      │
+│    ├─> SetTimer(PerformClick, 0)  ──> Cancel scheduled click                 │
+│    ├─> Set AppState.isRunning = false                                        │
+│    ├─> Reset AppState.currentTimer = 1                                       │
+│    ├─> UpdateGUIState(false)  ──> Re-enable controls                         │
+│    └─> UpdateStatus("Stopped")                                               │
+│                                                                              │
+│  EmergencyStop()  [ESC key - works anytime]                                 │
+│    ├─> Check if AppState.isRunning                                           │
+│    ├─> Call StopAutomation()                                                 │
+│    ├─> Show "EMERGENCY STOP" tooltip                                         │
+│    └─> Auto-hide tooltip after 2 seconds                                     │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                          VISUAL FEEDBACK SYSTEM                              │
+│                                                                              │
+│  FlashLocation(x, y)  [Green flash at captured location]                    │
+│    ├─> Create temporary GUI overlay                                          │
+│    ├─> Position at (x-10, y-10) with size 20x20                              │
+│    ├─> Flash 3 times (show/hide cycle)                                       │
+│    └─> Destroy overlay                                                       │
+│                                                                              │
+│  ShowClickFeedback(x, y)  [Yellow pulse at click location]                  │
+│    ├─> Create temporary GUI overlay                                          │
+│    ├─> Position at (x-5, y-5) with size 10x10                                │
+│    ├─> Show for 100ms                                                        │
+│    └─> Auto-destroy                                                          │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+
+════════════════════════════════════════════════════════════════════════════════
+  MODULE: utils.ahk (HELPER FUNCTIONS)
+════════════════════════════════════════════════════════════════════════════════
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                            UTILITY CATEGORIES                                │
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │  TIME & FORMATTING                                                  │    │
+│  │    FormatMilliseconds(ms)  ──> "1000ms" or "1.5s"                   │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │  FILE OPERATIONS (Safe wrappers with error handling)               │    │
+│  │    SafeFileRead(path, default)  ──> Try read, return default if fail│    │
+│  │    SafeFileWrite(path, content) ──> Try write, return true/false    │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │  LOGGING                                                            │    │
+│  │    LogMessage(msg, level)       ──> Write to logs/automation.log    │    │
+│  │    DebugOutput(msg)             ──> OutputDebug (dev only)          │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │  SCREEN & COORDINATE VALIDATION                                     │    │
+│  │    IsValidScreenCoordinate(x, y) ──> Check within virtual screen    │    │
+│  │    GetMonitorFromCoordinate(x,y) ──> Get monitor info for coord     │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │  COLOR UTILITIES                                                    │    │
+│  │    RGBToHex(r, g, b)  ──> Convert RGB to hex                        │    │
+│  │    HexToRGB(hex)      ──> Convert hex to RGB object                 │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │  VALIDATION                                                         │    │
+│  │    IsPositiveInteger(value)      ──> Check positive integer         │    │
+│  │    ValidateInterval(val, min)    ──> Check interval >= minValue     │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │  SYSTEM INFORMATION                                                 │    │
+│  │    GetSystemInfo()  ──> { os, is64Bit, screenW/H, monitors, ... }  │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+
+════════════════════════════════════════════════════════════════════════════════
+  HOTKEY SYSTEM & EVENT FLOW
+════════════════════════════════════════════════════════════════════════════════
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                         GLOBAL HOTKEY MAPPINGS                               │
+│                                                                              │
+│  Registered in main.ahk → RegisterHotkeys()                                  │
+│                                                                              │
+│    ┌──────────┬────────────────────────────────────────────────────┐        │
+│    │   KEY    │              ACTION                                │        │
+│    ├──────────┼────────────────────────────────────────────────────┤        │
+│    │   ESC    │  EmergencyStop()     [automation.ahk]              │        │
+│    │   F1     │  StartAutomation()   [automation.ahk]              │        │
+│    │   F2     │  StopAutomation()    [automation.ahk]              │        │
+│    │   F3     │  StartCoordinateCapture() [automation.ahk]         │        │
+│    └──────────┴────────────────────────────────────────────────────┘        │
+│                                                                              │
+│  Note: Hotkeys are GLOBAL - work even when GUI not focused                  │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+
+════════════════════════════════════════════════════════════════════════════════
+  DATA FLOW & STATE MANAGEMENT
+════════════════════════════════════════════════════════════════════════════════
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                          CONFIGURATION PERSISTENCE                           │
+│                                                                              │
+│  [Startup]                                                                   │
+│     │                                                                         │
+│     ▼                                                                         │
+│  LoadSettings()                                                              │
+│     ├─> Read config/settings.ini                                             │
+│     ├─> IniRead("Coordinate", "X") ──> AppState.targetX                      │
+│     ├─> IniRead("Coordinate", "Y") ──> AppState.targetY                      │
+│     ├─> IniRead("Intervals", "Interval1") ──> AppState.interval1             │
+│     └─> IniRead("Intervals", "Interval2") ──> AppState.interval2             │
+│                                                                              │
+│  [User clicks "Save Settings"]                                               │
+│     │                                                                         │
+│     ▼                                                                         │
+│  SaveCurrentSettings() [gui.ahk]                                             │
+│     ├─> Read GUI fields                                                      │
+│     ├─> Validate inputs                                                      │
+│     ├─> Update AppState                                                      │
+│     └─> Call SaveSettings() [main.ahk]                                       │
+│            │                                                                 │
+│            ▼                                                                 │
+│         IniWrite(AppState values) ──> config/settings.ini                    │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                       STATE SYNCHRONIZATION MODEL                            │
+│                                                                              │
+│                    ┌─────────────────────┐                                   │
+│                    │   AppState Object   │                                   │
+│                    │   (Global State)    │                                   │
+│                    └──────────┬──────────┘                                   │
+│                               │                                              │
+│              ┌────────────────┼────────────────┐                             │
+│              ▼                ▼                ▼                             │
+│        ┌──────────┐    ┌───────────┐    ┌──────────┐                        │
+│        │   GUI    │    │ Automation│    │ Settings │                        │
+│        │  Fields  │    │   Logic   │    │   File   │                        │
+│        └──────────┘    └───────────┘    └──────────┘                        │
+│                                                                              │
+│  Flow:                                                                       │
+│  1. User changes GUI  ──>  Triggers action  ──>  Updates AppState            │
+│  2. AppState changes  ──>  Updates GUI display (UpdateStatus, UpdateGUIState)│
+│  3. Save action       ──>  AppState  ──>  settings.ini                       │
+│  4. Load at startup   ──>  settings.ini  ──>  AppState  ──>  GUI            │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+
+════════════════════════════════════════════════════════════════════════════════
+  COMPLETE USER INTERACTION FLOW
+════════════════════════════════════════════════════════════════════════════════
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                        TYPICAL USER SESSION                                  │
+│                                                                              │
+│  START:  User launches run.sh or DesktopAutomationTool.bat                  │
+│     │                                                                         │
+│     ▼                                                                         │
+│  main.ahk executes                                                           │
+│     ├─> LoadSettings()  ──> Read previous config                             │
+│     ├─> CreateMainGUI() ──> Display window                                   │
+│     ├─> RegisterHotkeys() ──> F1/F2/F3/ESC active                            │
+│     └─> ShowWelcome()   ──> Tooltip with instructions                        │
+│                                                                              │
+│  [USER ACTION: Press F3 or click "Capture Coordinate"]                      │
+│     │                                                                         │
+│     ▼                                                                         │
+│  StartCoordinateCapture() ──> Wait for click ──> Capture (x, y)             │
+│     │                                                                         │
+│     ▼                                                                         │
+│  GUI updates with coordinates + Green flash at location                     │
+│                                                                              │
+│  [USER ACTION: Set intervals in GUI fields]                                 │
+│     Interval1: 1000ms                                                        │
+│     Interval2: 2000ms                                                        │
+│                                                                              │
+│  [USER ACTION: Click "Save Settings" (optional)]                            │
+│     │                                                                         │
+│     ▼                                                                         │
+│  SaveCurrentSettings() ──> Validate ──> Write to config/settings.ini        │
+│                                                                              │
+│  [USER ACTION: Press F1 or click "Start"]                                   │
+│     │                                                                         │
+│     ▼                                                                         │
+│  StartAutomation()                                                           │
+│     ├─> Validate coordinates & intervals                                     │
+│     ├─> Set AppState.isRunning = true                                        │
+│     ├─> UpdateGUIState(true)  ──> Disable controls                           │
+│     └─> PerformClick()  ──────────────────┐                                  │
+│                                           │                                  │
+│  ┌───────────────────────────────────────┘                                  │
+│  │                                                                            │
+│  ▼                                                                            │
+│  [AUTOMATION LOOP]                                                           │
+│    Click at (x, y) ──> Yellow pulse ──> Wait interval1 ──>                  │
+│    Click at (x, y) ──> Yellow pulse ──> Wait interval2 ──>                  │
+│    [REPEAT]                                                                  │
+│                                                                              │
+│  [USER ACTION: Press F2/ESC or click "Stop"]                                │
+│     │                                                                         │
+│     ▼                                                                         │
+│  StopAutomation()                                                            │
+│     ├─> Cancel timer                                                         │
+│     ├─> Set AppState.isRunning = false                                       │
+│     └─> UpdateGUIState(false)  ──> Re-enable controls                        │
+│                                                                              │
+│  [USER closes GUI window]                                                   │
+│     │                                                                         │
+│     ▼                                                                         │
+│  ExitApp()  ──> Program terminates                                           │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+
+════════════════════════════════════════════════════════════════════════════════
+  ERROR HANDLING & VALIDATION PATHS
+════════════════════════════════════════════════════════════════════════════════
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                        VALIDATION CHECKPOINTS                                │
+│                                                                              │
+│  StartCoordinateCapture()                                                    │
+│    └─> if (AppState.isRunning) ──> [ERROR] ──> MsgBox + return              │
+│                                                                              │
+│  StartAutomation()                                                           │
+│    ├─> if (coordinates = 0,0) ──> [ERROR] ──> MsgBox + return               │
+│    └─> if (intervals < 100) ───> [ERROR] ──> MsgBox + return                │
+│                                                                              │
+│  SaveCurrentSettings()                                                       │
+│    ├─> if (interval1 < 100) ──> [ERROR] ──> MsgBox + return                 │
+│    └─> if (interval2 < 100) ──> [ERROR] ──> MsgBox + return                 │
+│                                                                              │
+│  TestClick()                                                                 │
+│    └─> if (coordinates = 0,0) ──> [ERROR] ──> MsgBox + return               │
+│                                                                              │
+│  PerformClick()                                                              │
+│    └─> if (!AppState.isRunning) ──> Early return (safety check)             │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+
+════════════════════════════════════════════════════════════════════════════════
+  DEPENDENCY GRAPH
+════════════════════════════════════════════════════════════════════════════════
+
+                           ┌────────────────┐
+                           │   main.ahk     │
+                           │  (Bootstrap)   │
+                           └───────┬────────┘
+                                   │
+                    ┌──────────────┼──────────────┐
+                    │              │              │
+                    ▼              ▼              ▼
+            ┌──────────────┐ ┌─────────┐ ┌──────────────┐
+            │   gui.ahk    │ │automation│ │  utils.ahk   │
+            │ (Presentation│ │  .ahk    │ │  (Helpers)   │
+            │    Layer)    │ │ (Logic)  │ │              │
+            └──────┬───────┘ └────┬─────┘ └──────────────┘
+                   │              │
+                   └──────┬───────┘
+                          │
+                          ▼
+              ┌──────────────────────┐
+              │   automation.ahk     │
+              │   (calls)            │
+              └──────────────────────┘
+
+  Dependency Rules:
+  • main.ahk includes all modules
+  • gui.ahk calls automation.ahk functions
+  • automation.ahk calls gui.ahk functions (UpdateStatus, UpdateGUIState)
+  • utils.ahk is standalone (no dependencies on other modules)
+  • All modules share global AppState object
+
+
+════════════════════════════════════════════════════════════════════════════════
+  TIMER & SCHEDULING ARCHITECTURE
+════════════════════════════════════════════════════════════════════════════════
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                      TIMER-BASED EXECUTION MODEL                             │
+│                                                                              │
+│  AutoHotkey SetTimer() is used for:                                          │
+│                                                                              │
+│  1. Automated Clicking Loop                                                  │
+│     SetTimer(PerformClick, -interval)  [One-shot timer]                      │
+│     │                                                                         │
+│     └─> Executes PerformClick() after interval                               │
+│         ├─> Performs click                                                   │
+│         ├─> Shows feedback                                                   │
+│         └─> Schedules next click with SetTimer(PerformClick, -nextInterval)  │
+│                                                                              │
+│  2. Tooltip Auto-Hide                                                        │
+│     SetTimer(() => ToolTip(), -5000)  [Hide welcome after 5s]                │
+│     SetTimer(() => ToolTip(), -2000)  [Hide emergency stop after 2s]         │
+│                                                                              │
+│  3. Visual Feedback Auto-Cleanup                                             │
+│     SetTimer(() => pulse.Destroy(), -100)  [Remove click pulse after 100ms]  │
+│                                                                              │
+│  4. Status Message Auto-Clear                                                │
+│     SetTimer(() => statusText.Value := "Ready", -duration)                   │
+│                                                                              │
+│  Note: Negative interval = one-shot timer (executes once then stops)         │
+│        Positive interval = repeating timer (not used in this app)            │
+│        Zero interval = cancels timer                                         │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+
+════════════════════════════════════════════════════════════════════════════════
+  KEY ARCHITECTURAL PATTERNS
+════════════════════════════════════════════════════════════════════════════════
+
+1. SEPARATION OF CONCERNS
+   • main.ahk:      Bootstrap, state, settings I/O, hotkey registration
+   • gui.ahk:       All UI components, user interactions, visual updates
+   • automation.ahk: Click logic, coordinate capture, timer management
+   • utils.ahk:     Pure helper functions, no dependencies
+
+2. CENTRALIZED STATE
+   • Single AppState object holds all runtime state
+   • All modules read/write to AppState
+   • Prevents state synchronization issues
+
+3. EVENT-DRIVEN ARCHITECTURE
+   • Hotkeys trigger functions (F1 → StartAutomation)
+   • GUI buttons trigger functions (OnEvent "Click")
+   • Timers schedule deferred execution
+   • No polling loops
+
+4. VALIDATION AT BOUNDARIES
+   • User input validated before use
+   • Coordinates checked before clicking
+   • Intervals validated before automation starts
+   • State checked before state changes
+
+5. VISUAL FEEDBACK SYSTEM
+   • Every action has visual confirmation
+   • Temporary overlays show click locations
+   • Status text always reflects current state
+   • GUI controls disabled/enabled based on state
+
+6. FAIL-SAFE MECHANISMS
+   • Emergency stop (ESC) always available
+   • GUI lockout prevents conflicts during automation
+   • Minimum interval enforced (100ms)
+   • Early returns on invalid state
+
+7. MODULAR, TESTABLE DESIGN
+   • Each function has single responsibility
+   • Clear function names indicate purpose
+   • No tight coupling between modules
+   • Easy to add new features or modify existing ones
+
+
+════════════════════════════════════════════════════════════════════════════════
+  END OF ARCHITECTURE DIAGRAM
+════════════════════════════════════════════════════════════════════════════════
