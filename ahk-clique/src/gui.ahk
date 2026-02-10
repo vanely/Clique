@@ -226,6 +226,9 @@ AddInterval() {
         return
     }
     
+    ; Save current values from GUI before rebuilding
+    SaveCurrentIntervalValues()
+    
     ; Add new interval with default value
     AppState.intervals.Push(1000)
     
@@ -243,12 +246,36 @@ RemoveInterval() {
         return
     }
     
+    ; Save current values from GUI before rebuilding
+    SaveCurrentIntervalValues()
+    
     ; Remove last interval
     AppState.intervals.Pop()
     
     ; Rebuild the controls
     RebuildIntervalControls()
     UpdatePatternDescription()
+}
+
+;==============================================================================
+; Save Current Interval Values from GUI
+;==============================================================================
+SaveCurrentIntervalValues() {
+    global intervalControls
+    
+    ; Update AppState.intervals from the current edit controls
+    intervalIndex := 1
+    for control in intervalControls {
+        try {
+            if (control.Type = "Edit") {
+                value := Number(control.Value)
+                if (value > 0) {  ; Only update if it's a valid positive number
+                    AppState.intervals[intervalIndex] := value
+                }
+                intervalIndex++
+            }
+        }
+    }
 }
 
 ;==============================================================================
