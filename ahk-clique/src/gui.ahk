@@ -1,9 +1,10 @@
 ;==============================================================================
 ; GUI Components Module
-; Handles all user interface elements
+; Handles all user interface elements with tab-based click steps
 ;==============================================================================
 
 global MainGui := ""
+global currentTabIndex := 1
 
 ;==============================================================================
 ; Create Main GUI Window
@@ -12,77 +13,631 @@ CreateMainGUI() {
     global MainGui := Gui("+AlwaysOnTop", "Hey! What are you doing Phil?! 👀")
     MainGui.SetFont("s10", "Segoe UI")
     
-    ; Coordinate Section
-    MainGui.Add("GroupBox", "x10 y10 w380 h130", "Target Coordinate")
-    MainGui.Add("Text", "x20 y35", "X Coordinate:")
-    global xCoordEdit := MainGui.Add("Edit", "x120 y32 w80 Number", AppState.targetX)
-    MainGui.Add("Text", "x220 y35", "Y Coordinate:")
-    global yCoordEdit := MainGui.Add("Edit", "x320 y32 w60 Number", AppState.targetY)
+    ; Click Steps Management Section
+    MainGui.Add("GroupBox", "x10 y10 w780 h50", "Click Steps")
+    MainGui.Add("Text", "x20 y30", "Manage Steps:")
+    global addStepBtn := MainGui.Add("Button", "x120 y27 w100 h25", "+ Add Step")
+    addStepBtn.OnEvent("Click", (*) => AddClickStep())
+    global removeStepBtn := MainGui.Add("Button", "x230 y27 w100 h25", "- Remove Step")
+    removeStepBtn.OnEvent("Click", (*) => RemoveClickStep())
     
-    ; Click Type Radio Buttons
-    MainGui.Add("Text", "x20 y65", "Click Type:")
-    global leftClickRadio := MainGui.Add("Radio", "x120 y62 Checked" . (AppState.clickType = "Left" ? "1" : "0"), "Left Click")
-    global rightClickRadio := MainGui.Add("Radio", "x220 y62 Checked" . (AppState.clickType = "Right" ? "1" : "0"), "Right Click")
-    leftClickRadio.OnEvent("Click", (*) => (AppState.clickType := "Left"))
-    rightClickRadio.OnEvent("Click", (*) => (AppState.clickType := "Right"))
+    ; Tab Control for Click Steps
+    global stepTabControl := MainGui.Add("Tab3", "x10 y70 w780 h520", [])
     
-    global captureBtn := MainGui.Add("Button", "x20 y95 w150", "Capture Coordinate (F3)")
-    captureBtn.OnEvent("Click", (*) => StartCoordinateCapture())
-    
-    global testBtn := MainGui.Add("Button", "x180 y95 w100", "Test Click")
-    testBtn.OnEvent("Click", (*) => TestClick())
-    
-    ; Intervals Section
-    MainGui.Add("GroupBox", "x10 y150 w380 h200", "Click Settings")
-    
-    MainGui.Add("Text", "x20 y175", "Modifier Key:")
-    global modifierDropDown := MainGui.Add("DropDownList", "x120 y172 w100", ["None", "Shift", "Ctrl", "Alt"])
-    modifierDropDown.Text := AppState.modifierKey
-    MainGui.Add("Text", "x230 y175 c888888", "(pressed with click)")
-    
-    ; Intervals header with Add/Remove buttons
-    MainGui.Add("Text", "x20 y205", "Intervals:")
-    global addIntervalBtn := MainGui.Add("Button", "x120 y202 w60 h25", "+ Add")
-    addIntervalBtn.OnEvent("Click", (*) => AddInterval())
-    global removeIntervalBtn := MainGui.Add("Button", "x185 y202 w80 h25", "- Remove")
-    removeIntervalBtn.OnEvent("Click", (*) => RemoveInterval())
-    
-    ; Container for dynamic interval fields (starts at y235)
-    global intervalStartY := 235
-    global intervalSpacing := 30
-    
-    ; Build initial interval fields
-    RebuildIntervalControls()
-    
-    ; Pattern description
-    global patternText := MainGui.Add("Text", "x20 y320 c888888 w350", "")
-    UpdatePatternDescription()
+    ; Initialize tabs
+    RebuildStepTabs()
     
     ; Control Buttons Section
-    MainGui.Add("GroupBox", "x10 y360 w380 h100", "Controls")
+    MainGui.Add("GroupBox", "x10 y600 w780 h100", "Controls")
     
-    global startBtn := MainGui.Add("Button", "x20 y385 w110 h40", "Start (F1)")
+    global startBtn := MainGui.Add("Button", "x20 y625 w150 h40", "Start Sequence (F1)")
     startBtn.OnEvent("Click", (*) => StartAutomation())
     
-    global stopBtn := MainGui.Add("Button", "x140 y385 w110 h40 Disabled", "Stop (F2)")
+    global stopBtn := MainGui.Add("Button", "x180 y625 w150 h40 Disabled", "Stop (F2)")
     stopBtn.OnEvent("Click", (*) => StopAutomation())
     
-    global emergencyBtn := MainGui.Add("Button", "x260 y385 w120 h40 cRed", "EMERGENCY (ESC)")
+    global emergencyBtn := MainGui.Add("Button", "x340 y625 w150 h40 cRed", "EMERGENCY (ESC)")
     emergencyBtn.OnEvent("Click", (*) => EmergencyStop())
     
-    ; Status Section
-    MainGui.Add("GroupBox", "x10 y470 w380 h80", "Status")
-    global statusText := MainGui.Add("Text", "x20 y495 w360 h50", "Ready - Press F3 to capture a coordinate")
-    
     ; Save button
-    global saveBtn := MainGui.Add("Button", "x10 y560 w380 h35", "Save Settings")
+    global saveBtn := MainGui.Add("Button", "x500 y625 w280 h40", "Save All Settings")
     saveBtn.OnEvent("Click", (*) => SaveCurrentSettings())
+    
+    ; Status Section
+    MainGui.Add("GroupBox", "x10 y710 w780 h80", "Status")
+    global statusText := MainGui.Add("Text", "x20 y735 w760 h50", "Ready - Configure click steps and press F1 to start")
     
     ; Handle window close
     MainGui.OnEvent("Close", (*) => ExitApp())
     
     ; Show the GUI
-    MainGui.Show("w400 h610")
+    MainGui.Show("w800 h800")
+    
+    ; Force a redraw to ensure all tab controls are visible
+    Sleep(50)
+    MainGui.Show("NoActivate")
+}
+
+;==============================================================================
+; Add Click Step
+;==============================================================================
+AddClickStep() {
+    if (AppState.clickSteps.Length >= 10) {
+        MsgBox("Maximum of 10 click steps allowed", "Limit Reached", 48)
+        return
+    }
+    
+    ; Save current values before rebuilding
+    SaveAllStepValues()
+    
+    ; Add new step with default values
+    AppState.clickSteps.Push({
+        targetX: 0,
+        targetY: 0,
+        clickType: "Left",
+        modifierKey: "None",
+        intervals: [1000]
+    })
+    
+    ; Rebuild tabs
+    RebuildStepTabs()
+    
+    ; Switch to new tab
+    stepTabControl.Value := AppState.clickSteps.Length
+}
+
+;==============================================================================
+; Remove Click Step
+;==============================================================================
+RemoveClickStep() {
+    if (AppState.clickSteps.Length <= 1) {
+        MsgBox("Minimum of 1 click step required", "Cannot Remove", 48)
+        return
+    }
+    
+    ; Save current values before rebuilding
+    SaveAllStepValues()
+    
+    ; Remove last step
+    AppState.clickSteps.Pop()
+    
+    ; Rebuild tabs
+    RebuildStepTabs()
+}
+
+;==============================================================================
+; Rebuild Step Tabs
+;==============================================================================
+RebuildStepTabs() {
+    global stepTabControl, stepControls, currentTabIndex
+    
+    ; Save which tab was active (with safer fallback)
+    if (IsSet(stepTabControl)) {
+        try {
+            currentTabIndex := stepTabControl.Value
+        } catch {
+            currentTabIndex := 1
+        }
+    } else {
+        currentTabIndex := 1
+    }
+    
+    ; Destroy existing step controls carefully
+    for stepCtrl in stepControls {
+        if (IsObject(stepCtrl)) {
+            ; Destroy known control properties individually
+            try {
+                if (IsObject(stepCtrl.xCoordEdit)) {
+                    stepCtrl.xCoordEdit.Destroy()
+                }
+            }
+            try {
+                if (IsObject(stepCtrl.yCoordEdit)) {
+                    stepCtrl.yCoordEdit.Destroy()
+                }
+            }
+            try {
+                if (IsObject(stepCtrl.leftClickRadio)) {
+                    stepCtrl.leftClickRadio.Destroy()
+                }
+            }
+            try {
+                if (IsObject(stepCtrl.rightClickRadio)) {
+                    stepCtrl.rightClickRadio.Destroy()
+                }
+            }
+            try {
+                if (IsObject(stepCtrl.captureBtn)) {
+                    stepCtrl.captureBtn.Destroy()
+                }
+            }
+            try {
+                if (IsObject(stepCtrl.testBtn)) {
+                    stepCtrl.testBtn.Destroy()
+                }
+            }
+            try {
+                if (IsObject(stepCtrl.modifierDropDown)) {
+                    stepCtrl.modifierDropDown.Destroy()
+                }
+            }
+            try {
+                if (IsObject(stepCtrl.addIntervalBtn)) {
+                    stepCtrl.addIntervalBtn.Destroy()
+                }
+            }
+            try {
+                if (IsObject(stepCtrl.removeIntervalBtn)) {
+                    stepCtrl.removeIntervalBtn.Destroy()
+                }
+            }
+            try {
+                if (IsObject(stepCtrl.patternText)) {
+                    stepCtrl.patternText.Destroy()
+                }
+            }
+            
+            ; Handle interval controls array separately
+            try {
+                if (IsObject(stepCtrl.intervalControls)) {
+                    for intervalCtrl in stepCtrl.intervalControls {
+                        try intervalCtrl.Destroy()
+                    }
+                }
+            }
+        }
+    }
+    stepControls := []
+    
+    ; Build tab names
+    tabNames := []
+    Loop AppState.clickSteps.Length {
+        tabNames.Push("Step " . A_Index)
+    }
+    
+    ; Clear and recreate tabs
+    Loop 10 {  ; Clear up to 10 possible existing tabs
+        try stepTabControl.Delete(1)
+    }
+    
+    Loop AppState.clickSteps.Length {
+        stepTabControl.Add([tabNames[A_Index]])
+    }
+    
+    ; Small delay for tab control to stabilize
+    Sleep(20)
+    
+    ; Create content for each tab
+    Loop AppState.clickSteps.Length {
+        stepNum := A_Index
+        CreateStepContent(stepNum)
+    }
+    
+    ; Restore tab selection safely
+    if (currentTabIndex > AppState.clickSteps.Length) {
+        currentTabIndex := AppState.clickSteps.Length
+    }
+    if (currentTabIndex < 1) {
+        currentTabIndex := 1
+    }
+    stepTabControl.Value := currentTabIndex
+    
+    ; Update button states
+    addStepBtn.Enabled := (AppState.clickSteps.Length < 10)
+    removeStepBtn.Enabled := (AppState.clickSteps.Length > 1)
+    
+    ; Force GUI to refresh and show all controls
+    MainGui.Show("NoActivate")
+}
+
+;==============================================================================
+; Create Content for a Single Step Tab
+;==============================================================================
+CreateStepContent(stepNum) {
+    global stepTabControl, stepControls
+    
+    step := AppState.clickSteps[stepNum]
+    controls := {}
+    
+    stepTabControl.UseTab(stepNum)
+    
+    baseX := 30
+    baseY := 100
+    
+    ; Target Coordinate Section
+    MainGui.Add("GroupBox", "x" . baseX . " y" . baseY . " w720 h130", "Target Coordinate")
+    MainGui.Add("Text", "x" . (baseX + 10) . " y" . (baseY + 25), "X Coordinate:")
+    controls.xCoordEdit := MainGui.Add("Edit", "x" . (baseX + 110) . " y" . (baseY + 22) . " w80 Number")
+    MainGui.Add("Text", "x" . (baseX + 210) . " y" . (baseY + 25), "Y Coordinate:")
+    controls.yCoordEdit := MainGui.Add("Edit", "x" . (baseX + 310) . " y" . (baseY + 22) . " w80 Number")
+    
+    ; Click Type Radio Buttons
+    MainGui.Add("Text", "x" . (baseX + 10) . " y" . (baseY + 55), "Click Type:")
+    controls.leftClickRadio := MainGui.Add("Radio", "x" . (baseX + 110) . " y" . (baseY + 52), "Left Click")
+    controls.rightClickRadio := MainGui.Add("Radio", "x" . (baseX + 210) . " y" . (baseY + 52), "Right Click")
+    
+    ; Add event handlers with safe index checking
+    controls.leftClickRadio.OnEvent("Click", RadioClickHandler.Bind("Left", stepNum))
+    controls.rightClickRadio.OnEvent("Click", RadioClickHandler.Bind("Right", stepNum))
+    
+    ; Capture and Test buttons
+    controls.captureBtn := MainGui.Add("Button", "x" . (baseX + 10) . " y" . (baseY + 85) . " w150", "Capture Coordinate (F3)")
+    controls.captureBtn.OnEvent("Click", (*) => StartCoordinateCapture(stepNum))
+    controls.testBtn := MainGui.Add("Button", "x" . (baseX + 170) . " y" . (baseY + 85) . " w100", "Test Click")
+    controls.testBtn.OnEvent("Click", (*) => TestClick(stepNum))
+    
+    ; Click Settings Section
+    baseY += 140
+    MainGui.Add("GroupBox", "x" . baseX . " y" . baseY . " w720 h230", "Click Settings")
+    
+    MainGui.Add("Text", "x" . (baseX + 10) . " y" . (baseY + 25), "Modifier Key:")
+    controls.modifierDropDown := MainGui.Add("DropDownList", "x" . (baseX + 110) . " y" . (baseY + 22) . " w100", ["None", "Shift", "Ctrl", "Alt"])
+    MainGui.Add("Text", "x" . (baseX + 220) . " y" . (baseY + 25) . " c888888", "(pressed with click)")
+    
+    ; Intervals header with Add/Remove buttons
+    MainGui.Add("Text", "x" . (baseX + 10) . " y" . (baseY + 55), "Intervals:")
+    controls.addIntervalBtn := MainGui.Add("Button", "x" . (baseX + 110) . " y" . (baseY + 52) . " w60 h25", "+ Add")
+    controls.addIntervalBtn.OnEvent("Click", (*) => AddInterval(stepNum))
+    controls.removeIntervalBtn := MainGui.Add("Button", "x" . (baseX + 175) . " y" . (baseY + 52) . " w80 h25", "- Remove")
+    controls.removeIntervalBtn.OnEvent("Click", (*) => RemoveInterval(stepNum))
+    
+    ; Interval controls (dynamic)
+    controls.intervalControls := []
+    controls.intervalStartY := baseY + 85
+    controls.intervalSpacing := 30
+    
+    ; Create initial interval controls directly (don't call RebuildIntervalControls yet)
+    Loop step.intervals.Length {
+        y := controls.intervalStartY + ((A_Index - 1) * controls.intervalSpacing)
+        
+        intervalBaseX := 40
+        
+        ; Label
+        label := MainGui.Add("Text", "x" . intervalBaseX . " y" . y, "Interval " . A_Index . ":")
+        controls.intervalControls.Push(label)
+        
+        ; Edit box - create without value first
+        edit := MainGui.Add("Edit", "x" . (intervalBaseX + 100) . " y" . (y - 3) . " w100 Number")
+        controls.intervalControls.Push(edit)
+        
+        ; "ms" label
+        msLabel := MainGui.Add("Text", "x" . (intervalBaseX + 210) . " y" . y, "ms")
+        controls.intervalControls.Push(msLabel)
+    }
+    
+    ; Pattern description
+    controls.patternText := MainGui.Add("Text", "x" . (baseX + 10) . " y" . (baseY + 180) . " c888888 w700", "")
+    
+    stepTabControl.UseTab()
+    
+    ; Store controls for this step BEFORE setting values
+    stepControls.Push(controls)
+    
+    ; NOW set all values explicitly after controls are created and stored
+    controls.xCoordEdit.Value := step.targetX
+    controls.yCoordEdit.Value := step.targetY
+    
+    ; Set click type radio buttons
+    if (step.clickType = "Left") {
+        controls.leftClickRadio.Value := 1
+    } else {
+        controls.rightClickRadio.Value := 1
+    }
+    
+    ; Set modifier dropdown
+    controls.modifierDropDown.Text := step.modifierKey
+    
+    ; Set interval values
+    intervalIndex := 1
+    for ctrl in controls.intervalControls {
+        try {
+            if (ctrl.Type = "Edit" && intervalIndex <= step.intervals.Length) {
+                ctrl.Value := step.intervals[intervalIndex]
+                intervalIndex++
+            }
+        }
+    }
+    
+    ; Update button states
+    controls.addIntervalBtn.Enabled := (step.intervals.Length < 3)
+    controls.removeIntervalBtn.Enabled := (step.intervals.Length > 1)
+    
+    ; Update pattern description
+    UpdatePatternDescription(stepNum)
+    
+    ; Force redraw of this tab's controls
+    try {
+        controls.xCoordEdit.Redraw()
+        controls.yCoordEdit.Redraw()
+    }
+}
+
+;==============================================================================
+; Add Interval to Specific Step
+;==============================================================================
+AddInterval(stepNum) {
+    step := AppState.clickSteps[stepNum]
+    
+    if (step.intervals.Length >= 3) {
+        MsgBox("Maximum of 3 intervals allowed per step", "Limit Reached", 48)
+        return
+    }
+    
+    ; Save current values
+    SaveCurrentIntervalValues(stepNum)
+    
+    ; Add new interval
+    step.intervals.Push(1000)
+    
+    ; Rebuild controls
+    RebuildIntervalControls(stepNum)
+    UpdatePatternDescription(stepNum)
+}
+
+;==============================================================================
+; Remove Interval from Specific Step
+;==============================================================================
+RemoveInterval(stepNum) {
+    step := AppState.clickSteps[stepNum]
+    
+    if (step.intervals.Length <= 1) {
+        MsgBox("Minimum of 1 interval required per step", "Cannot Remove", 48)
+        return
+    }
+    
+    ; Save current values
+    SaveCurrentIntervalValues(stepNum)
+    
+    ; Remove last interval
+    step.intervals.Pop()
+    
+    ; Rebuild controls
+    RebuildIntervalControls(stepNum)
+    UpdatePatternDescription(stepNum)
+}
+
+;==============================================================================
+; Save Current Interval Values for a Specific Step
+;==============================================================================
+SaveCurrentIntervalValues(stepNum) {
+    global stepControls
+    
+    if (stepNum > stepControls.Length || stepNum < 1) {
+        return
+    }
+    
+    controls := stepControls[stepNum]
+    step := AppState.clickSteps[stepNum]
+    
+    if (!IsObject(controls)) {
+        return
+    }
+    
+    ; Check if intervalControls property exists using try/catch
+    try {
+        if (!IsObject(controls.intervalControls)) {
+            return
+        }
+    } catch {
+        return
+    }
+    
+    intervalIndex := 1
+    for ctrl in controls.intervalControls {
+        try {
+            if (ctrl.Type = "Edit" && intervalIndex <= step.intervals.Length) {
+                value := Number(ctrl.Value)
+                ; Only update if it's a valid positive number
+                if (value > 0) {
+                    step.intervals[intervalIndex] := value
+                }
+                intervalIndex++
+            }
+        }
+    }
+}
+
+;==============================================================================
+; Rebuild Interval Controls for a Specific Step
+;==============================================================================
+RebuildIntervalControls(stepNum) {
+    global stepControls, stepTabControl
+    
+    if (stepNum > stepControls.Length || stepNum < 1) {
+        return
+    }
+    
+    controls := stepControls[stepNum]
+    
+    if (!IsObject(controls)) {
+        return
+    }
+    
+    step := AppState.clickSteps[stepNum]
+    
+    ; Hide and destroy existing interval controls using try/catch
+    try {
+        if (IsObject(controls.intervalControls)) {
+            for ctrl in controls.intervalControls {
+                try {
+                    ctrl.Visible := false
+                }
+            }
+            for ctrl in controls.intervalControls {
+                try {
+                    ctrl.Destroy()
+                }
+            }
+        }
+    }
+    controls.intervalControls := []
+    
+    Sleep(10)
+    
+    ; Switch to this tab to create controls
+    stepTabControl.UseTab(stepNum)
+    
+    ; Create new interval controls
+    Loop step.intervals.Length {
+        y := controls.intervalStartY + ((A_Index - 1) * controls.intervalSpacing)
+        
+        baseX := 40
+        
+        ; Label
+        label := MainGui.Add("Text", "x" . baseX . " y" . y, "Interval " . A_Index . ":")
+        controls.intervalControls.Push(label)
+        
+        ; Edit box
+        edit := MainGui.Add("Edit", "x" . (baseX + 100) . " y" . (y - 3) . " w100 Number", step.intervals[A_Index])
+        controls.intervalControls.Push(edit)
+        
+        ; "ms" label
+        msLabel := MainGui.Add("Text", "x" . (baseX + 210) . " y" . y, "ms")
+        controls.intervalControls.Push(msLabel)
+    }
+    
+    stepTabControl.UseTab()
+    
+    ; Update button states with try/catch
+    try {
+        if (IsObject(controls.addIntervalBtn)) {
+            controls.addIntervalBtn.Enabled := (step.intervals.Length < 3)
+        }
+    }
+    try {
+        if (IsObject(controls.removeIntervalBtn)) {
+            controls.removeIntervalBtn.Enabled := (step.intervals.Length > 1)
+        }
+    }
+    
+    ; Ensure controls are visible
+    for ctrl in controls.intervalControls {
+        try {
+            ctrl.Visible := true
+        }
+    }
+}
+
+;==============================================================================
+; Update Pattern Description for a Specific Step
+;==============================================================================
+UpdatePatternDescription(stepNum) {
+    global stepControls
+    
+    if (stepNum > stepControls.Length) {
+        return
+    }
+    
+    controls := stepControls[stepNum]
+    step := AppState.clickSteps[stepNum]
+    
+    pattern := "Pattern: Click"
+    
+    Loop step.intervals.Length {
+        pattern .= " → Wait " . step.intervals[A_Index] . "ms → Click"
+    }
+    
+    pattern .= " → Next Step"
+    controls.patternText.Value := pattern
+}
+
+;==============================================================================
+; Start Coordinate Capture for Specific Step
+;==============================================================================
+StartCoordinateCapture(stepNum := 1) {
+    global stepControls
+    
+    if (AppState.isRunning) {
+        MsgBox("Cannot capture while automation is running", "Error", 48)
+        return
+    }
+    
+    AppState.isCapturing := true
+    UpdateStatus("Move mouse to target position and press LEFT CLICK for Step " . stepNum)
+    
+    ToolTip("Click anywhere to capture that coordinate for Step " . stepNum, 10, 10)
+    
+    KeyWait("LButton", "D")
+    
+    MouseGetPos(&x, &y)
+    
+    ; Update state and GUI
+    AppState.clickSteps[stepNum].targetX := x
+    AppState.clickSteps[stepNum].targetY := y
+    
+    if (stepNum <= stepControls.Length) {
+        controls := stepControls[stepNum]
+        controls.xCoordEdit.Value := x
+        controls.yCoordEdit.Value := y
+    }
+    
+    AppState.isCapturing := false
+    ToolTip()
+    
+    UpdateStatus("Coordinate captured for Step " . stepNum . ": (" . x . ", " . y . ")", 3000)
+    FlashLocation(x, y)
+}
+
+;==============================================================================
+; Test Click for Specific Step
+;==============================================================================
+TestClick(stepNum) {
+    global stepControls
+    
+    if (stepNum > stepControls.Length) {
+        return
+    }
+    
+    controls := stepControls[stepNum]
+    step := AppState.clickSteps[stepNum]
+    
+    x := Number(controls.xCoordEdit.Value)
+    y := Number(controls.yCoordEdit.Value)
+    modifier := controls.modifierDropDown.Text
+    
+    ; Check which radio button is selected
+    if (controls.leftClickRadio.Value = 1) {
+        clickType := "Left"
+    } else if (controls.rightClickRadio.Value = 1) {
+        clickType := "Right"
+    } else {
+        clickType := "Left"  ; Default fallback
+    }
+    
+    if (x = 0 && y = 0) {
+        MsgBox("Please set coordinates first for Step " . stepNum, "Invalid Coordinates", 48)
+        return
+    }
+    
+    modifierText := modifier != "None" ? " with " . modifier : ""
+    UpdateStatus("Test " . clickType . " clicking at (" . x . ", " . y . ")" . modifierText . " for Step " . stepNum . "...", 3000)
+    
+    MouseGetPos(&currentX, &currentY)
+    
+    PerformModifierClick(x, y, modifier, clickType)
+    
+    MouseMove(currentX, currentY)
+}
+
+;==============================================================================
+; Flash Location Indicator
+;==============================================================================
+FlashLocation(x, y) {
+    indicator := Gui("+AlwaysOnTop -Caption +ToolWindow")
+    indicator.BackColor := "Lime"
+    WinSetTransparent(200, indicator)
+    
+    indicator.Show("x" . (x - 10) . " y" . (y - 10) . " w20 h20 NoActivate")
+    
+    Loop 3 {
+        Sleep(200)
+        indicator.Hide()
+        Sleep(200)
+        indicator.Show("NoActivate")
+    }
+    
+    Sleep(500)
+    indicator.Destroy()
 }
 
 ;==============================================================================
@@ -98,272 +653,179 @@ UpdateStatus(message, duration := 0) {
 }
 
 ;==============================================================================
-; Toggle GUI Controls Based on State
+; Save All Step Values from GUI
 ;==============================================================================
-UpdateGUIState(running := false) {
-    global startBtn, stopBtn, captureBtn, testBtn
-    global xCoordEdit, yCoordEdit, modifierDropDown
-    global leftClickRadio, rightClickRadio
-    global addIntervalBtn, removeIntervalBtn, intervalControls
+SaveAllStepValues() {
+    global stepControls
     
-    if (running) {
-        startBtn.Enabled := false
-        stopBtn.Enabled := true
-        captureBtn.Enabled := false
-        testBtn.Enabled := false
-        xCoordEdit.Enabled := false
-        yCoordEdit.Enabled := false
-        modifierDropDown.Enabled := false
-        leftClickRadio.Enabled := false
-        rightClickRadio.Enabled := false
-        addIntervalBtn.Enabled := false
-        removeIntervalBtn.Enabled := false
+    ; Only save steps that have controls initialized
+    maxStepsToSave := Min(AppState.clickSteps.Length, stepControls.Length)
+    
+    Loop maxStepsToSave {
+        stepNum := A_Index
         
-        ; Disable all interval edit boxes
-        for control in intervalControls {
-            try {
-                if (control.Type = "Edit") {
-                    control.Enabled := false
+        controls := stepControls[stepNum]
+        
+        if (!IsObject(controls)) {
+            continue
+        }
+        
+        step := AppState.clickSteps[stepNum]
+        
+        ; Save basic settings with error handling using property access
+        try {
+            if (IsObject(controls.xCoordEdit)) {
+                step.targetX := Number(controls.xCoordEdit.Value)
+            }
+        }
+        try {
+            if (IsObject(controls.yCoordEdit)) {
+                step.targetY := Number(controls.yCoordEdit.Value)
+            }
+        }
+        try {
+            if (IsObject(controls.modifierDropDown)) {
+                step.modifierKey := controls.modifierDropDown.Text
+            }
+        }
+        try {
+            if (IsObject(controls.leftClickRadio) && IsObject(controls.rightClickRadio)) {
+                ; Check which radio button is selected (Value = 1 means selected)
+                leftValue := controls.leftClickRadio.Value
+                rightValue := controls.rightClickRadio.Value
+                
+                if (leftValue = 1) {
+                    step.clickType := "Left"
+                } else if (rightValue = 1) {
+                    step.clickType := "Right"
+                } else {
+                    ; Fallback - if neither is explicitly set, keep current value or default to Left
+                    if (!step.HasOwnProp("clickType") || step.clickType = "") {
+                        step.clickType := "Left"
+                    }
                 }
             }
         }
-    } else {
-        startBtn.Enabled := true
-        stopBtn.Enabled := false
-        captureBtn.Enabled := true
-        testBtn.Enabled := true
-        xCoordEdit.Enabled := true
-        yCoordEdit.Enabled := true
-        modifierDropDown.Enabled := true
-        leftClickRadio.Enabled := true
-        rightClickRadio.Enabled := true
-        addIntervalBtn.Enabled := (AppState.intervals.Length < 3)
-        removeIntervalBtn.Enabled := (AppState.intervals.Length > 1)
         
-        ; Enable all interval edit boxes
-        for control in intervalControls {
-            try {
-                if (control.Type = "Edit") {
-                    control.Enabled := true
-                }
-            }
-        }
+        ; Save intervals
+        SaveCurrentIntervalValues(stepNum)
     }
 }
 
 ;==============================================================================
-; Save Current Settings from GUI
+; Min Helper Function
+;==============================================================================
+Min(a, b) {
+    return (a < b) ? a : b
+}
+
+;==============================================================================
+; Radio Button Click Handler (Safe)
+;==============================================================================
+RadioClickHandler(clickType, stepNum, *) {
+    ; Safely check if step still exists
+    if (stepNum <= AppState.clickSteps.Length && stepNum > 0) {
+        AppState.clickSteps[stepNum].clickType := clickType
+    }
+}
+
+;==============================================================================
+; Save Current Settings
 ;==============================================================================
 SaveCurrentSettings() {
-    global xCoordEdit, yCoordEdit, modifierDropDown
-    global leftClickRadio, intervalControls
+    ; Save all values from GUI first
+    SaveAllStepValues()
     
-    ; Update state from GUI
-    AppState.targetX := Number(xCoordEdit.Value)
-    AppState.targetY := Number(yCoordEdit.Value)
-    AppState.modifierKey := modifierDropDown.Text
-    AppState.clickType := leftClickRadio.Value ? "Left" : "Right"
-    
-    ; Update intervals from edit controls
-    intervalIndex := 1
-    for control in intervalControls {
-        try {
-            if (control.Type = "Edit") {
-                value := Number(control.Value)
-                
-                ; Validate interval
-                if (value < 100) {
-                    MsgBox("Interval " . intervalIndex . " must be at least 100ms", "Invalid Input", 48)
-                    return
-                }
-                
-                AppState.intervals[intervalIndex] := value
-                intervalIndex++
+    ; Validate all intervals
+    Loop AppState.clickSteps.Length {
+        step := AppState.clickSteps[A_Index]
+        
+        Loop step.intervals.Length {
+            if (step.intervals[A_Index] < 100) {
+                MsgBox("Step " . A_Index . " Interval " . A_Index . " must be at least 100ms", "Invalid Input", 48)
+                return
             }
         }
     }
     
     ; Save to file
     SaveSettings()
-    UpdateStatus("Settings saved successfully!", 3000)
+    UpdateStatus("All settings saved successfully!", 3000)
 }
 
 ;==============================================================================
-; Test Click Function
+; Toggle GUI Controls Based on State
 ;==============================================================================
-TestClick() {
-    global xCoordEdit, yCoordEdit, modifierDropDown, leftClickRadio
+UpdateGUIState(running := false) {
+    global startBtn, stopBtn, addStepBtn, removeStepBtn, saveBtn, stepControls
     
-    x := Number(xCoordEdit.Value)
-    y := Number(yCoordEdit.Value)
-    modifier := modifierDropDown.Text
-    clickType := leftClickRadio.Value ? "Left" : "Right"
-    
-    if (x = 0 && y = 0) {
-        MsgBox("Please set coordinates first", "Invalid Coordinates", 48)
-        return
-    }
-    
-    modifierText := modifier != "None" ? " with " . modifier : ""
-    UpdateStatus("Test " . clickType . " clicking at (" . x . ", " . y . ")" . modifierText . "...", 3000)
-    
-    ; Save current position
-    MouseGetPos(&currentX, &currentY)
-    
-    ; Perform test click with modifier
-    PerformModifierClick(x, y, modifier, clickType)
-    
-    ; Return to original position
-    MouseMove(currentX, currentY)
-}
-
-;==============================================================================
-; Add Interval
-;==============================================================================
-AddInterval() {
-    if (AppState.intervals.Length >= 3) {
-        MsgBox("Maximum of 3 intervals allowed", "Limit Reached", 48)
-        return
-    }
-    
-    ; Save current values from GUI before rebuilding
-    SaveCurrentIntervalValues()
-    
-    ; Add new interval with default value
-    AppState.intervals.Push(1000)
-    
-    ; Rebuild the controls
-    RebuildIntervalControls()
-    UpdatePatternDescription()
-}
-
-;==============================================================================
-; Remove Interval
-;==============================================================================
-RemoveInterval() {
-    if (AppState.intervals.Length <= 1) {
-        MsgBox("Minimum of 1 interval required", "Cannot Remove", 48)
-        return
-    }
-    
-    ; Save current values from GUI before rebuilding
-    SaveCurrentIntervalValues()
-    
-    ; Remove last interval
-    AppState.intervals.Pop()
-    
-    ; Rebuild the controls
-    RebuildIntervalControls()
-    UpdatePatternDescription()
-}
-
-;==============================================================================
-; Save Current Interval Values from GUI
-;==============================================================================
-SaveCurrentIntervalValues() {
-    global intervalControls
-    
-    ; Update AppState.intervals from the current edit controls
-    intervalIndex := 1
-    for control in intervalControls {
-        try {
-            if (control.Type = "Edit") {
-                value := Number(control.Value)
-                if (value > 0) {  ; Only update if it's a valid positive number
-                    AppState.intervals[intervalIndex] := value
+    if (running) {
+        startBtn.Enabled := false
+        stopBtn.Enabled := true
+        addStepBtn.Enabled := false
+        removeStepBtn.Enabled := false
+        saveBtn.Enabled := false
+        
+        ; Disable all step controls
+        for controls in stepControls {
+            try {
+                controls.xCoordEdit.Enabled := false
+                controls.yCoordEdit.Enabled := false
+                controls.leftClickRadio.Enabled := false
+                controls.rightClickRadio.Enabled := false
+                controls.captureBtn.Enabled := false
+                controls.testBtn.Enabled := false
+                controls.modifierDropDown.Enabled := false
+                controls.addIntervalBtn.Enabled := false
+                controls.removeIntervalBtn.Enabled := false
+                
+                for ctrl in controls.intervalControls {
+                    try {
+                        if (ctrl.Type = "Edit") {
+                            ctrl.Enabled := false
+                        }
+                    }
                 }
-                intervalIndex++
+            }
+        }
+    } else {
+        startBtn.Enabled := true
+        stopBtn.Enabled := false
+        addStepBtn.Enabled := (AppState.clickSteps.Length < 10)
+        removeStepBtn.Enabled := (AppState.clickSteps.Length > 1)
+        saveBtn.Enabled := true
+        
+        ; Enable all step controls
+        Loop AppState.clickSteps.Length {
+            stepNum := A_Index
+            
+            if (stepNum > stepControls.Length) {
+                continue
+            }
+            
+            controls := stepControls[stepNum]
+            step := AppState.clickSteps[stepNum]
+            
+            try {
+                controls.xCoordEdit.Enabled := true
+                controls.yCoordEdit.Enabled := true
+                controls.leftClickRadio.Enabled := true
+                controls.rightClickRadio.Enabled := true
+                controls.captureBtn.Enabled := true
+                controls.testBtn.Enabled := true
+                controls.modifierDropDown.Enabled := true
+                controls.addIntervalBtn.Enabled := (step.intervals.Length < 3)
+                controls.removeIntervalBtn.Enabled := (step.intervals.Length > 1)
+                
+                for ctrl in controls.intervalControls {
+                    try {
+                        if (ctrl.Type = "Edit") {
+                            ctrl.Enabled := true
+                        }
+                    }
+                }
             }
         }
     }
 }
 
-;==============================================================================
-; Rebuild Interval Controls
-;==============================================================================
-RebuildIntervalControls() {
-    global intervalControls, intervalStartY, intervalSpacing
-    global addIntervalBtn, removeIntervalBtn, MainGui
-    
-    ; First pass: hide and delete all existing interval controls
-    Loop intervalControls.Length {
-        try {
-            intervalControls[A_Index].Visible := false
-        }
-    }
-    
-    ; Second pass: destroy after hiding
-    for control in intervalControls {
-        try {
-            control.Destroy()
-        }
-    }
-    
-    ; Clear the array
-    intervalControls := []
-    
-    ; Small delay to ensure cleanup
-    Sleep(10)
-    
-    ; Create new controls for each interval
-    Loop AppState.intervals.Length {
-        y := intervalStartY + ((A_Index - 1) * intervalSpacing)
-        
-        ; Label
-        label := MainGui.Add("Text", "x20 y" . y, "Interval " . A_Index . ":")
-        intervalControls.Push(label)
-        
-        ; Edit box
-        edit := MainGui.Add("Edit", "x120 y" . (y - 3) . " w100 Number", AppState.intervals[A_Index])
-        intervalControls.Push(edit)
-        
-        ; "ms" label
-        msLabel := MainGui.Add("Text", "x230 y" . y, "ms")
-        intervalControls.Push(msLabel)
-    }
-    
-    ; Update button states
-    addIntervalBtn.Enabled := (AppState.intervals.Length < 3)
-    removeIntervalBtn.Enabled := (AppState.intervals.Length > 1)
-    
-    ; Force GUI to redraw
-    MainGui.Show("NoActivate")
-}
-
-;==============================================================================
-; Update Pattern Description
-;==============================================================================
-UpdatePatternDescription() {
-    global patternText
-    
-    pattern := "Pattern: Click"
-    
-    Loop AppState.intervals.Length {
-        pattern .= " → Wait Interval" . A_Index
-        pattern .= " → Click"
-    }
-    
-    pattern .= " → Repeat"
-    patternText.Value := pattern
-}
-
-;==============================================================================
-; Visual Feedback for Coordinate Capture
-;==============================================================================
-ShowCaptureOverlay() {
-    global CaptureOverlay := Gui("+AlwaysOnTop -Caption +ToolWindow")
-    CaptureOverlay.BackColor := "Red"
-    WinSetTransparent(100, CaptureOverlay)
-    
-    ; Get screen dimensions
-    MonitorGetWorkArea(, , , &screenWidth, &screenHeight)
-    
-    ; Show crosshair guides
-    CaptureOverlay.Show("x0 y0 w" . screenWidth . " h2")
-}
-
-HideCaptureOverlay() {
-    global CaptureOverlay
-    if (IsSet(CaptureOverlay))
-        CaptureOverlay.Destroy()
-}

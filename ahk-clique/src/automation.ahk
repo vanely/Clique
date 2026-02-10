@@ -1,115 +1,100 @@
 ;==============================================================================
 ; Automation Logic Module
-; Handles coordinate capture and automated clicking
+; Handles multi-step automated clicking sequences
 ;==============================================================================
 
 ;==============================================================================
-; Start Coordinate Capture Mode
+; Execution Queue - Stores flattened action sequence
 ;==============================================================================
-StartCoordinateCapture() {
-    if (AppState.isRunning) {
-        MsgBox("Cannot capture while automation is running", "Error", 48)
-        return
+global ExecutionQueue := []
+global ExecutionQueueIndex := 1
+
+;==============================================================================
+; Build Execution Queue (Like Promise.all())
+;==============================================================================
+BuildExecutionQueue() {
+    global ExecutionQueue := []
+    
+    ; Flatten all steps and intervals into a sequential queue
+    Loop AppState.clickSteps.Length {
+        stepNum := A_Index
+        step := AppState.clickSteps[stepNum]
+        
+        ; For each interval in this step, create an action
+        Loop step.intervals.Length {
+            intervalNum := A_Index
+            
+            ; Create an action object
+            action := {
+                stepNum: stepNum,
+                stepTotal: AppState.clickSteps.Length,
+                intervalNum: intervalNum,
+                intervalTotal: step.intervals.Length,
+                targetX: step.targetX,
+                targetY: step.targetY,
+                clickType: step.clickType,
+                modifierKey: step.modifierKey,
+                waitMs: step.intervals[intervalNum]
+            }
+            
+            ExecutionQueue.Push(action)
+        }
     }
     
-    AppState.isCapturing := true
-    UpdateStatus("Move mouse to target position and press LEFT CLICK")
-    
-    ; Show visual feedback
-    ToolTip("Click anywhere to capture that coordinate", 10, 10)
-    
-    ; Wait for mouse click
-    KeyWait("LButton", "D")
-    
-    ; Capture the position
-    MouseGetPos(&x, &y)
-    
-    ; Update state and GUI
-    AppState.targetX := x
-    AppState.targetY := y
-    xCoordEdit.Value := x
-    yCoordEdit.Value := y
-    
-    AppState.isCapturing := false
-    ToolTip()
-    
-    UpdateStatus("Coordinate captured: (" . x . ", " . y . ")", 3000)
-    
-    ; Flash the captured location
-    FlashLocation(x, y)
+    return ExecutionQueue.Length
 }
 
 ;==============================================================================
-; Flash Location Indicator
-;==============================================================================
-FlashLocation(x, y) {
-    ; Create a temporary visual indicator
-    indicator := Gui("+AlwaysOnTop -Caption +ToolWindow")
-    indicator.BackColor := "Lime"
-    WinSetTransparent(200, indicator)
-    
-    ; Show at target location
-    indicator.Show("x" . (x - 10) . " y" . (y - 10) . " w20 h20 NoActivate")
-    
-    ; Flash 3 times
-    Loop 3 {
-        Sleep(200)
-        indicator.Hide()
-        Sleep(200)
-        indicator.Show("NoActivate")
-    }
-    
-    Sleep(500)
-    indicator.Destroy()
-}
-
-;==============================================================================
-; Start Automation
+; Start Automation Sequence
 ;==============================================================================
 StartAutomation() {
-    global intervalControls, modifierDropDown
-    
     if (AppState.isRunning) {
         return
     }
     
-    ; Validate coordinates
-    if (AppState.targetX = 0 && AppState.targetY = 0) {
-        MsgBox("Please set target coordinates first", "No Coordinates", 48)
-        return
-    }
+    ; Save all current GUI values
+    SaveAllStepValues()
     
-    ; Get current values from GUI and validate
-    intervalIndex := 1
-    for control in intervalControls {
-        try {
-            if (control.Type = "Edit") {
-                value := Number(control.Value)
-                
-                if (value < 100) {
-                    MsgBox("Interval " . intervalIndex . " must be at least 100ms", "Invalid Intervals", 48)
-                    return
-                }
-                
-                AppState.intervals[intervalIndex] := value
-                intervalIndex++
+    ; Validate all steps have coordinates
+    Loop AppState.clickSteps.Length {
+        step := AppState.clickSteps[A_Index]
+        
+        if (step.targetX = 0 && step.targetY = 0) {
+            MsgBox("Please set target coordinates for Step " . A_Index, "No Coordinates", 48)
+            return
+        }
+        
+        ; Validate intervals
+        Loop step.intervals.Length {
+            if (step.intervals[A_Index] < 100) {
+                MsgBox("Step " . A_Index . " Interval " . A_Index . " must be at least 100ms", "Invalid Intervals", 48)
+                return
             }
         }
     }
     
-    AppState.modifierKey := modifierDropDown.Text
+    ; Build the execution queue - guarantees sequential order
+    totalActions := BuildExecutionQueue()
+    
+    if (totalActions = 0) {
+        MsgBox("No actions to execute", "Empty Queue", 48)
+        return
+    }
     
     ; Update state
     AppState.isRunning := true
-    AppState.currentIntervalIndex := 1
+    global ExecutionQueueIndex := 1
     UpdateGUIState(true)
     
-    clickTypeText := AppState.clickType = "Right" ? "Right-clicking" : "Clicking"
-    modifierText := AppState.modifierKey != "None" ? " with " . AppState.modifierKey : ""
-    UpdateStatus("RUNNING - " . clickTypeText . modifierText . " with " . AppState.intervals.Length . " interval(s)")
+    ; Show what we're actually running with
+    firstAction := ExecutionQueue[1]
+    debugInfo := "RUNNING - " . totalActions . " total actions | Step 1: " 
+                . firstAction.clickType . " click, " 
+                . firstAction.modifierKey . " modifier"
+    UpdateStatus(debugInfo)
     
-    ; Start the automation sequence
-    PerformClick()
+    ; Start the execution queue
+    ExecuteNextAction()
 }
 
 ;==============================================================================
@@ -120,12 +105,13 @@ StopAutomation() {
         return
     }
     
-    ; Stop the PerformClick timer
-    SetTimer(PerformClick, 0)
+    ; Stop the execution timer
+    SetTimer(ExecuteNextAction, 0)
     
     ; Update state
     AppState.isRunning := false
-    AppState.currentIntervalIndex := 1
+    global ExecutionQueueIndex := 1
+    global ExecutionQueue := []
     UpdateGUIState(false)
     UpdateStatus("Stopped")
 }
@@ -142,33 +128,41 @@ EmergencyStop() {
 }
 
 ;==============================================================================
-; Perform Click Action
+; Execute Next Action in Queue (Sequential Guarantee)
 ;==============================================================================
-PerformClick() {
+ExecuteNextAction() {
+    global ExecutionQueue, ExecutionQueueIndex
+    
     if (!AppState.isRunning) {
         return
     }
     
-    ; Perform the click with modifier key
-    PerformModifierClick(AppState.targetX, AppState.targetY, AppState.modifierKey, AppState.clickType)
-    
-    ; Show brief visual feedback
-    ShowClickFeedback(AppState.targetX, AppState.targetY)
-    
-    ; Get current interval
-    currentInterval := AppState.intervals[AppState.currentIntervalIndex]
-    
-    ; Update status
-    UpdateStatus("RUNNING - Next click in " . currentInterval . "ms (Interval " . AppState.currentIntervalIndex . ")")
-    
-    ; Move to next interval (cycle through)
-    AppState.currentIntervalIndex++
-    if (AppState.currentIntervalIndex > AppState.intervals.Length) {
-        AppState.currentIntervalIndex := 1
+    ; Check if we've exhausted the queue - loop back to start
+    if (ExecutionQueueIndex > ExecutionQueue.Length) {
+        ExecutionQueueIndex := 1
     }
     
-    ; Schedule next click
-    SetTimer(PerformClick, -currentInterval)
+    ; Get the current action from queue (sequential, deterministic)
+    action := ExecutionQueue[ExecutionQueueIndex]
+    
+    ; Perform the click - this is synchronous and atomic
+    PerformModifierClick(action.targetX, action.targetY, action.modifierKey, action.clickType)
+    
+    ; Show visual feedback
+    ShowClickFeedback(action.targetX, action.targetY)
+    
+    ; Update status with queue position
+    UpdateStatus("RUNNING - Action " . ExecutionQueueIndex . "/" . ExecutionQueue.Length 
+                . " | Step " . action.stepNum . "/" . action.stepTotal
+                . " | Interval " . action.intervalNum . "/" . action.intervalTotal
+                . " | Next in " . action.waitMs . "ms")
+    
+    ; Move to next action in queue (increment happens BEFORE scheduling)
+    ExecutionQueueIndex++
+    
+    ; Schedule next action with ONE-SHOT timer (negative value)
+    ; This guarantees no overlapping executions
+    SetTimer(ExecuteNextAction, -action.waitMs)
 }
 
 ;==============================================================================

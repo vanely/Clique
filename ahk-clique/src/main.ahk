@@ -22,18 +22,23 @@ CoordMode("ToolTip", "Screen")
 ; Global State
 ;==============================================================================
 global AppState := {
-    targetX: 0,
-    targetY: 0,
-    intervals: [1000, 2000],  ; Array of intervals in milliseconds (1-3 allowed)
+    clickSteps: [
+        {
+            targetX: 0,
+            targetY: 0,
+            clickType: "Left",
+            modifierKey: "None",
+            intervals: [1000, 2000]
+        }
+    ],
+    currentStepIndex: 1,  ; Which step is currently being executed
+    currentIntervalIndex: 1,  ; Which interval within the current step
     isRunning: false,
-    isCapturing: false,
-    currentIntervalIndex: 1,  ; Track which interval we're on
-    modifierKey: "None",  ; Shift, Ctrl, Alt, or None
-    clickType: "Left"  ; Left or Right
+    isCapturing: false
 }
 
-; Global array to store interval control references
-global intervalControls := []
+; Global arrays to store control references per step
+global stepControls := []  ; Array of objects, each containing controls for one step
 
 ;==============================================================================
 ; Initialization
@@ -67,8 +72,23 @@ RegisterHotkeys() {
     ; F2 - Stop automation
     Hotkey("F2", (*) => StopAutomation())
     
-    ; F3 - Capture coordinate
-    Hotkey("F3", (*) => StartCoordinateCapture())
+    ; F3 - Capture coordinate for currently active tab
+    Hotkey("F3", (*) => CaptureCurrentTab())
+}
+
+;==============================================================================
+; Capture Coordinate for Currently Active Tab
+;==============================================================================
+CaptureCurrentTab() {
+    global stepTabControl
+    
+    try {
+        currentTab := stepTabControl.Value
+        StartCoordinateCapture(currentTab)
+    } catch {
+        ; Fallback to step 1 if tab control not initialized
+        StartCoordinateCapture(1)
+    }
 }
 
 ;==============================================================================
@@ -90,23 +110,81 @@ LoadSettings() {
     configFile := A_ScriptDir . "\..\config\settings.ini"
     
     if FileExist(configFile) {
-        AppState.targetX := IniRead(configFile, "Coordinate", "X", 0)
-        AppState.targetY := IniRead(configFile, "Coordinate", "Y", 0)
-        AppState.modifierKey := IniRead(configFile, "Click", "ModifierKey", "None")
-        AppState.clickType := IniRead(configFile, "Click", "ClickType", "Left")
+        ; Load number of click steps
+        stepCount := IniRead(configFile, "General", "StepCount", 1)
         
-        ; Load intervals dynamically
-        intervalCount := IniRead(configFile, "Intervals", "Count", 2)
-        AppState.intervals := []
-        
-        Loop intervalCount {
-            value := IniRead(configFile, "Intervals", "Interval" . A_Index, A_Index * 1000)
-            AppState.intervals.Push(Number(value))
+        ; Validate step count
+        if (stepCount < 1) {
+            stepCount := 1
+        }
+        if (stepCount > 10) {
+            stepCount := 10
         }
         
-        ; Ensure at least 1 interval exists
-        if (AppState.intervals.Length = 0) {
-            AppState.intervals.Push(1000)
+        AppState.clickSteps := []
+        
+        ; Load each click step
+        Loop stepCount {
+            stepNum := A_Index
+            step := {}
+            
+            ; Load coordinates with validation
+            step.targetX := Number(IniRead(configFile, "Step" . stepNum, "X", 0))
+            step.targetY := Number(IniRead(configFile, "Step" . stepNum, "Y", 0))
+            step.modifierKey := IniRead(configFile, "Step" . stepNum, "ModifierKey", "None")
+            step.clickType := IniRead(configFile, "Step" . stepNum, "ClickType", "Left")
+            
+            ; Validate modifier key
+            if (step.modifierKey != "None" && step.modifierKey != "Shift" 
+                && step.modifierKey != "Ctrl" && step.modifierKey != "Alt") {
+                step.modifierKey := "None"
+            }
+            
+            ; Validate click type
+            if (step.clickType != "Left" && step.clickType != "Right") {
+                step.clickType := "Left"
+            }
+            
+            ; Load intervals for this step with validation
+            intervalCount := IniRead(configFile, "Step" . stepNum, "IntervalCount", 2)
+            if (intervalCount < 1) {
+                intervalCount := 1
+            }
+            if (intervalCount > 3) {
+                intervalCount := 3
+            }
+            
+            step.intervals := []
+            
+            Loop intervalCount {
+                value := Number(IniRead(configFile, "Step" . stepNum, "Interval" . A_Index, A_Index * 1000))
+                ; Validate interval (minimum 100ms, maximum 3600000ms = 1 hour)
+                if (value < 100) {
+                    value := 100
+                }
+                if (value > 3600000) {
+                    value := 3600000
+                }
+                step.intervals.Push(value)
+            }
+            
+            ; Ensure at least 1 interval
+            if (step.intervals.Length = 0) {
+                step.intervals.Push(1000)
+            }
+            
+            AppState.clickSteps.Push(step)
+        }
+        
+        ; Ensure at least 1 step exists
+        if (AppState.clickSteps.Length = 0) {
+            AppState.clickSteps.Push({
+                targetX: 0,
+                targetY: 0,
+                clickType: "Left",
+                modifierKey: "None",
+                intervals: [1000, 2000]
+            })
         }
     }
 }
@@ -119,15 +197,24 @@ SaveSettings() {
     if !DirExist(configDir)
         DirCreate(configDir)
     
-    IniWrite(AppState.targetX, configFile, "Coordinate", "X")
-    IniWrite(AppState.targetY, configFile, "Coordinate", "Y")
-    IniWrite(AppState.modifierKey, configFile, "Click", "ModifierKey")
-    IniWrite(AppState.clickType, configFile, "Click", "ClickType")
+    ; Save number of steps
+    IniWrite(AppState.clickSteps.Length, configFile, "General", "StepCount")
     
-    ; Save intervals dynamically
-    IniWrite(AppState.intervals.Length, configFile, "Intervals", "Count")
-    
-    Loop AppState.intervals.Length {
-        IniWrite(AppState.intervals[A_Index], configFile, "Intervals", "Interval" . A_Index)
+    ; Save each click step
+    Loop AppState.clickSteps.Length {
+        stepNum := A_Index
+        step := AppState.clickSteps[stepNum]
+        
+        IniWrite(step.targetX, configFile, "Step" . stepNum, "X")
+        IniWrite(step.targetY, configFile, "Step" . stepNum, "Y")
+        IniWrite(step.modifierKey, configFile, "Step" . stepNum, "ModifierKey")
+        IniWrite(step.clickType, configFile, "Step" . stepNum, "ClickType")
+        
+        ; Save intervals for this step
+        IniWrite(step.intervals.Length, configFile, "Step" . stepNum, "IntervalCount")
+        
+        Loop step.intervals.Length {
+            IniWrite(step.intervals[A_Index], configFile, "Step" . stepNum, "Interval" . A_Index)
+        }
     }
 }
