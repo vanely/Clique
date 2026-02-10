@@ -24,13 +24,16 @@ CoordMode("ToolTip", "Screen")
 global AppState := {
     targetX: 0,
     targetY: 0,
-    interval1: 1000,  ; milliseconds
-    interval2: 2000,  ; milliseconds
+    intervals: [1000, 2000],  ; Array of intervals in milliseconds (1-3 allowed)
     isRunning: false,
     isCapturing: false,
-    currentTimer: 1,
-    modifierKey: "None"  ; Shift, Ctrl, Alt, or None
+    currentIntervalIndex: 1,  ; Track which interval we're on
+    modifierKey: "None",  ; Shift, Ctrl, Alt, or None
+    clickType: "Left"  ; Left or Right
 }
+
+; Global array to store interval control references
+global intervalControls := []
 
 ;==============================================================================
 ; Initialization
@@ -89,9 +92,22 @@ LoadSettings() {
     if FileExist(configFile) {
         AppState.targetX := IniRead(configFile, "Coordinate", "X", 0)
         AppState.targetY := IniRead(configFile, "Coordinate", "Y", 0)
-        AppState.interval1 := IniRead(configFile, "Intervals", "Interval1", 1000)
-        AppState.interval2 := IniRead(configFile, "Intervals", "Interval2", 2000)
         AppState.modifierKey := IniRead(configFile, "Click", "ModifierKey", "None")
+        AppState.clickType := IniRead(configFile, "Click", "ClickType", "Left")
+        
+        ; Load intervals dynamically
+        intervalCount := IniRead(configFile, "Intervals", "Count", 2)
+        AppState.intervals := []
+        
+        Loop intervalCount {
+            value := IniRead(configFile, "Intervals", "Interval" . A_Index, A_Index * 1000)
+            AppState.intervals.Push(Number(value))
+        }
+        
+        ; Ensure at least 1 interval exists
+        if (AppState.intervals.Length = 0) {
+            AppState.intervals.Push(1000)
+        }
     }
 }
 
@@ -105,7 +121,13 @@ SaveSettings() {
     
     IniWrite(AppState.targetX, configFile, "Coordinate", "X")
     IniWrite(AppState.targetY, configFile, "Coordinate", "Y")
-    IniWrite(AppState.interval1, configFile, "Intervals", "Interval1")
-    IniWrite(AppState.interval2, configFile, "Intervals", "Interval2")
     IniWrite(AppState.modifierKey, configFile, "Click", "ModifierKey")
+    IniWrite(AppState.clickType, configFile, "Click", "ClickType")
+    
+    ; Save intervals dynamically
+    IniWrite(AppState.intervals.Length, configFile, "Intervals", "Count")
+    
+    Loop AppState.intervals.Length {
+        IniWrite(AppState.intervals[A_Index], configFile, "Intervals", "Interval" . A_Index)
+    }
 }

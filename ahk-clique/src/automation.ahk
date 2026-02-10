@@ -67,7 +67,7 @@ FlashLocation(x, y) {
 ; Start Automation
 ;==============================================================================
 StartAutomation() {
-    global interval1Edit, interval2Edit, modifierDropDown
+    global intervalControls, modifierDropDown
     
     if (AppState.isRunning) {
         return
@@ -79,24 +79,34 @@ StartAutomation() {
         return
     }
     
-    ; Get current values from GUI
-    AppState.interval1 := Number(interval1Edit.Value)
-    AppState.interval2 := Number(interval2Edit.Value)
-    AppState.modifierKey := modifierDropDown.Text
-    
-    ; Validate intervals
-    if (AppState.interval1 < 100 || AppState.interval2 < 100) {
-        MsgBox("Intervals must be at least 100ms", "Invalid Intervals", 48)
-        return
+    ; Get current values from GUI and validate
+    intervalIndex := 1
+    for control in intervalControls {
+        try {
+            if (control.Type = "Edit") {
+                value := Number(control.Value)
+                
+                if (value < 100) {
+                    MsgBox("Interval " . intervalIndex . " must be at least 100ms", "Invalid Intervals", 48)
+                    return
+                }
+                
+                AppState.intervals[intervalIndex] := value
+                intervalIndex++
+            }
+        }
     }
+    
+    AppState.modifierKey := modifierDropDown.Text
     
     ; Update state
     AppState.isRunning := true
-    AppState.currentTimer := 1
+    AppState.currentIntervalIndex := 1
     UpdateGUIState(true)
     
+    clickTypeText := AppState.clickType = "Right" ? "Right-clicking" : "Clicking"
     modifierText := AppState.modifierKey != "None" ? " with " . AppState.modifierKey : ""
-    UpdateStatus("RUNNING - Clicking" . modifierText . " with alternating intervals")
+    UpdateStatus("RUNNING - " . clickTypeText . modifierText . " with " . AppState.intervals.Length . " interval(s)")
     
     ; Start the automation sequence
     PerformClick()
@@ -115,7 +125,7 @@ StopAutomation() {
     
     ; Update state
     AppState.isRunning := false
-    AppState.currentTimer := 1
+    AppState.currentIntervalIndex := 1
     UpdateGUIState(false)
     UpdateStatus("Stopped")
 }
@@ -135,31 +145,30 @@ EmergencyStop() {
 ; Perform Click Action
 ;==============================================================================
 PerformClick() {
-    global ClickTimer
-    
     if (!AppState.isRunning) {
         return
     }
     
     ; Perform the click with modifier key
-    PerformModifierClick(AppState.targetX, AppState.targetY, AppState.modifierKey)
+    PerformModifierClick(AppState.targetX, AppState.targetY, AppState.modifierKey, AppState.clickType)
     
     ; Show brief visual feedback
     ShowClickFeedback(AppState.targetX, AppState.targetY)
     
-    ; Determine next interval
-    if (AppState.currentTimer = 1) {
-        nextInterval := AppState.interval1
-        AppState.currentTimer := 2
-        UpdateStatus("RUNNING - Next click in " . nextInterval . "ms (Interval 1)")
-    } else {
-        nextInterval := AppState.interval2
-        AppState.currentTimer := 1
-        UpdateStatus("RUNNING - Next click in " . nextInterval . "ms (Interval 2)")
+    ; Get current interval
+    currentInterval := AppState.intervals[AppState.currentIntervalIndex]
+    
+    ; Update status
+    UpdateStatus("RUNNING - Next click in " . currentInterval . "ms (Interval " . AppState.currentIntervalIndex . ")")
+    
+    ; Move to next interval (cycle through)
+    AppState.currentIntervalIndex++
+    if (AppState.currentIntervalIndex > AppState.intervals.Length) {
+        AppState.currentIntervalIndex := 1
     }
     
     ; Schedule next click
-    SetTimer(PerformClick, -nextInterval)
+    SetTimer(PerformClick, -currentInterval)
 }
 
 ;==============================================================================
@@ -178,22 +187,25 @@ ShowClickFeedback(x, y) {
 ;==============================================================================
 ; Perform Click with Modifier Key
 ;==============================================================================
-PerformModifierClick(x, y, modifier) {
+PerformModifierClick(x, y, modifier, clickType := "Left") {
+    ; Determine click button
+    clickButton := (clickType = "Right") ? "Right" : "Left"
+    
     ; Press modifier key if specified
     switch modifier {
         case "Shift":
-            Send("{Shift down}")
-            Click(x, y)
-            Send("{Shift up}")
+            Send("{LShift down}")
+            Click(x, y, clickButton)
+            Send("{LShift up}")
         case "Ctrl":
-            Send("{Ctrl down}")
-            Click(x, y)
-            Send("{Ctrl up}")
+            SendPlay("{Ctrl down}")
+            Click(x, y, clickButton)
+            SendPlay("{Ctrl up}")
         case "Alt":
-            Send("{Alt down}")
-            Click(x, y)
-            Send("{Alt up}")
+            SendPlay("{Alt down}")
+            Click(x, y, clickButton)
+            SendPlay("{Alt up}")
         default:  ; "None"
-            Click(x, y)
+            Click(x, y, clickButton)
     }
 }
