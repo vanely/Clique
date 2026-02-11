@@ -422,19 +422,35 @@ SaveCurrentIntervalValues(stepNum) {
         return
     }
     
+    ; Debug: Show what we're reading from GUI
+    debugMsg := "Reading intervals for Step " . stepNum . ":`n"
+    
     intervalIndex := 1
     for ctrl in controls.intervalControls {
         try {
-            if (ctrl.Type = "Edit" && intervalIndex <= step.intervals.Length) {
-                value := Number(ctrl.Value)
-                ; Only update if it's a valid positive number
-                if (value > 0) {
-                    step.intervals[intervalIndex] := value
+            if (ctrl.Type = "Edit") {
+                ; Only save if we haven't exceeded the interval array length
+                if (intervalIndex <= step.intervals.Length) {
+                    value := Number(ctrl.Value)
+                    debugMsg .= "Interval " . intervalIndex . ": GUI=" . ctrl.Value . " → "
+                    
+                    ; Only update if it's a valid positive number
+                    if (value > 0) {
+                        step.intervals[intervalIndex] := value
+                        debugMsg .= "Saved " . value . "ms`n"
+                    } else {
+                        debugMsg .= "Invalid (kept old value)`n"
+                    }
                 }
+                ; Increment ONLY after processing an Edit control
                 intervalIndex++
             }
         }
     }
+    
+    ; Show debug output briefly
+    ToolTip(debugMsg, 10, 100)
+    SetTimer(() => ToolTip(), -2000)
 }
 
 ;==============================================================================

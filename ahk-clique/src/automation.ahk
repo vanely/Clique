@@ -15,6 +15,19 @@ global ExecutionQueueIndex := 1
 BuildExecutionQueue() {
     global ExecutionQueue := []
     
+    ; Debug: Show what we're building from
+    debugMsg := "Building Queue from AppState:`n"
+    Loop AppState.clickSteps.Length {
+        step := AppState.clickSteps[A_Index]
+        debugMsg .= "Step " . A_Index . ": "
+        Loop step.intervals.Length {
+            debugMsg .= step.intervals[A_Index] . "ms "
+        }
+        debugMsg .= "`n"
+    }
+    ToolTip(debugMsg, 10, 50)
+    SetTimer(() => ToolTip(), -3000)
+    
     ; Flatten all steps and intervals into a sequential queue
     Loop AppState.clickSteps.Length {
         stepNum := A_Index
