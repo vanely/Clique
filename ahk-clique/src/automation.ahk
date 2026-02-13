@@ -195,6 +195,12 @@ ShowClickFeedback(x, y) {
 ; Perform Click with Modifier Key
 ;==============================================================================
 PerformModifierClick(x, y, modifier, clickType := "Left") {
+    ; Move mouse to position first (hover before click)
+    MouseMove(x, y, 0)  ; 0 = instant move, can change to 2-5 for visible movement
+    
+    ; Small delay to ensure hover states trigger
+    Sleep(100)
+    
     ; Determine click button
     clickButton := (clickType = "Right") ? "Right" : "Left"
     
@@ -202,14 +208,17 @@ PerformModifierClick(x, y, modifier, clickType := "Left") {
     switch modifier {
         case "Shift":
             Send("{LShift down}")
+            Sleep(100)
             Click(x, y, clickButton)
             Send("{LShift up}")
         case "Ctrl":
             SendPlay("{Ctrl down}")
+            Sleep(100)
             Click(x, y, clickButton)
             SendPlay("{Ctrl up}")
         case "Alt":
             SendPlay("{Alt down}")
+            Sleep(100)
             Click(x, y, clickButton)
             SendPlay("{Alt up}")
         default:  ; "None"
