@@ -199,28 +199,34 @@ PerformModifierClick(x, y, modifier, clickType := "Left") {
     MouseMove(x, y, 0)  ; 0 = instant move, can change to 2-5 for visible movement
     
     ; Small delay to ensure hover states trigger
-    Sleep(100)
+    Sleep(200)
     
     ; Determine click button
     clickButton := (clickType = "Right") ? "Right" : "Left"
     
-    ; Press modifier key if specified
+    ; Press modifier key if specified with guaranteed hold
     switch modifier {
         case "Shift":
             Send("{LShift down}")
-            Sleep(100)
+            Sleep(100)  ; Ensure key down is registered
             Click(x, y, clickButton)
+            Sleep(50)  ; Ensure click completes before releasing
             Send("{LShift up}")
+            
         case "Ctrl":
-            SendPlay("{Ctrl down}")
-            Sleep(100)
+            Send("{Ctrl down}")
+            Sleep(100)  ; Ensure key down is registered
             Click(x, y, clickButton)
-            SendPlay("{Ctrl up}")
+            Sleep(50)  ; Ensure click completes before releasing
+            Send("{Ctrl up}")
+            
         case "Alt":
-            SendPlay("{Alt down}")
-            Sleep(100)
+            Send("{Alt down}")
+            Sleep(100)  ; Ensure key down is registered
             Click(x, y, clickButton)
-            SendPlay("{Alt up}")
+            Sleep(50)  ; Ensure click completes before releasing
+            Send("{Alt up}")
+            
         default:  ; "None"
             Click(x, y, clickButton)
     }
