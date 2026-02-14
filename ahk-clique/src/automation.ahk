@@ -210,21 +210,21 @@ PerformModifierClick(x, y, modifier, clickType := "Left") {
             Send("{LShift down}")
             Sleep(100)  ; Ensure key down is registered
             Click(x, y, clickButton)
-            Sleep(50)  ; Ensure click completes before releasing
+            Sleep(100)  ; Ensure click completes before releasing
             Send("{LShift up}")
             
         case "Ctrl":
             Send("{Ctrl down}")
             Sleep(100)  ; Ensure key down is registered
             Click(x, y, clickButton)
-            Sleep(50)  ; Ensure click completes before releasing
+            Sleep(100)  ; Ensure click completes before releasing
             Send("{Ctrl up}")
             
         case "Alt":
             Send("{Alt down}")
             Sleep(100)  ; Ensure key down is registered
             Click(x, y, clickButton)
-            Sleep(50)  ; Ensure click completes before releasing
+            Sleep(100)  ; Ensure click completes before releasing
             Send("{Alt up}")
             
         default:  ; "None"
