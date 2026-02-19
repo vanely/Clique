@@ -195,8 +195,9 @@ ShowClickFeedback(x, y) {
 ; Perform Click with Modifier Key
 ;==============================================================================
 PerformModifierClick(x, y, modifier, clickType := "Left") {
-    ; Move mouse to position first (hover before click)
-    MouseMove(x, y, 0)  ; 0 = instant move, can change to 2-5 for visible movement
+    ; Move mouse to position with visible movement
+    ; Speed: 0 = instant, 2 = very fast, 10 = moderate, 100 = very slow
+    MouseMove(x, y, 10)  ; 2 = fast but visible movement
     
     ; Small delay to ensure hover states trigger
     Sleep(200)
